@@ -264,7 +264,7 @@ function intentarLogin() {
     localStorage.setItem('sesionActiva', JSON.stringify({ tipo: 'ADMIN' }));
     sesionTipo = 'ADMIN';
     input.value = "";
-    goToScreen(0);
+    irADestinoTrasLogin(0);
     return;
   }
 
@@ -272,7 +272,7 @@ function intentarLogin() {
     localStorage.setItem('sesionActiva', JSON.stringify({ tipo: 'ANALYTICS' }));
     sesionTipo = 'ANALYTICS';
     input.value = "";
-    goToScreen(5);
+    irADestinoTrasLogin(5);
     return;
   }
 
@@ -283,7 +283,7 @@ function intentarLogin() {
     actualizarInfoAsesorDOM();
     sesionTipo = 'ASESOR';
     input.value = "";
-    goToScreen(1);
+    irADestinoTrasLogin(1);
     return;
   }
 
@@ -295,7 +295,7 @@ function intentarLogin() {
     actualizarInfoAsesorDOM();
     sesionTipo = 'ASESOR';
     input.value = "";
-    goToScreen(1);
+    irADestinoTrasLogin(1);
     return;
   }
 
@@ -327,7 +327,81 @@ function irAInicioSesion() {
 }
 
 /* ===================== 4. NAVEGACIÓN Y CAPTURA ===================== */
-function goToScreen(screenId) {
+/* Cada pantalla tiene su link (#analytics, #administracion, ...), así
+   funcionan el botón "atrás" del navegador/teléfono y los favoritos.
+   Escribir el link a mano NO salta los permisos: puedeVerPantalla() decide,
+   y si no corresponde se devuelve al usuario a su pantalla de inicio. */
+const RUTAS_PANTALLA = { login: "login", 0: "inicio", 1: "cliente", 2: "categorias", 3: "sublineas", 4: "productos", 5: "analytics", 6: "administracion" };
+const PANTALLA_POR_RUTA = Object.fromEntries(Object.entries(RUTAS_PANTALLA).map(([id, ruta]) => [ruta, id === "login" ? "login" : Number(id)]));
+let destinoTrasLogin = null; // pantalla pedida por link antes de iniciar sesión
+
+function pantallaDeInicio() {
+  if (sesionTipo === 'ADMIN') return 0;
+  if (sesionTipo === 'ASESOR') return 1;
+  if (sesionTipo === 'ANALYTICS') return 5;
+  return "login";
+}
+
+function puedeVerPantalla(screenId) {
+  if (screenId === "login") return !sesionTipo;
+  if (!sesionTipo) return false;
+  const capturaPermitida = sesionTipo === 'ASESOR' || sesionTipo === 'ADMIN';
+  switch (screenId) {
+    case 0: case 6: return sesionTipo === 'ADMIN';
+    case 5: return sesionTipo === 'ADMIN' || sesionTipo === 'ANALYTICS';
+    case 1: return capturaPermitida;
+    // Pantallas de captura: además requieren haber elegido cliente/categoría/sublínea.
+    case 2: return capturaPermitida && !!clienteActual.cod;
+    case 3: return capturaPermitida && !!clienteActual.cod && !!categoriaSeleccionada;
+    case 4: return capturaPermitida && !!clienteActual.cod && !!categoriaSeleccionada && !!sublineaSeleccionada;
+    default: return false;
+  }
+}
+
+function pantallaDesdeHash() {
+  const ruta = decodeURIComponent(window.location.hash.replace(/^#\/?/, "")).toLowerCase();
+  return ruta in PANTALLA_POR_RUTA ? PANTALLA_POR_RUTA[ruta] : null;
+}
+
+// Link escrito a mano, favorito o botón atrás/adelante.
+function navegarDesdeHash() {
+  const pedida = pantallaDesdeHash();
+  if (pedida === null) { goToScreen(pantallaDeInicio(), { reemplazar: true }); return; }
+  if (puedeVerPantalla(pedida)) { goToScreen(pedida, { desdeHash: true }); return; }
+
+  const inicio = pantallaDeInicio();
+  if (!sesionTipo) {
+    destinoTrasLogin = pedida;
+    goToScreen("login", { reemplazar: true });
+    const errorEl = document.getElementById('login-error');
+    errorEl.textContent = "Inicia sesión para entrar a esa sección.";
+    errorEl.classList.remove('hidden');
+    return;
+  }
+  goToScreen(inicio, { reemplazar: true });
+  // Pantallas de captura sin cliente elegido (ej. atrás/adelante tras cambiar de cliente) no son
+  // un acceso indebido: solo se vuelve al inicio sin aviso.
+  const rolNoPermitido = [0, 5, 6].includes(pedida) || (sesionTipo === 'ANALYTICS' && [1, 2, 3, 4].includes(pedida));
+  if (rolNoPermitido) mostrarAlerta("No tienes acceso a esa sección. Te llevamos a tu pantalla de inicio.", "advertencia", "Acceso no permitido");
+}
+
+// Tras un login correcto: va a la pantalla pedida por link si el usuario puede verla.
+function irADestinoTrasLogin(inicio) {
+  const destino = destinoTrasLogin;
+  destinoTrasLogin = null;
+  goToScreen(destino !== null && puedeVerPantalla(destino) ? destino : inicio);
+}
+
+function goToScreen(screenId, opciones = {}) {
+  if (!opciones.desdeHash) {
+    const nuevoHash = "#" + RUTAS_PANTALLA[screenId];
+    if (window.location.hash !== nuevoHash) {
+      if (opciones.reemplazar) history.replaceState(null, "", nuevoHash);
+      else history.pushState(null, "", nuevoHash);
+    }
+  }
+  document.getElementById("modal-imagen-ampliada").classList.add("hidden");
+  document.getElementById("modal-guardar-exito").classList.add("hidden");
   ["login", 0, 1, 2, 3, 4, 5, 6].forEach(id => document.getElementById(`screen-${id}`).classList.add("hidden"));
   document.getElementById(`screen-${screenId}`).classList.remove("hidden");
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2062,16 +2136,11 @@ window.onload = async function () {
   // Restaura la sesión activa (si la hay) para que el usuario no tenga que
   // volver a loguearse en cada recarga; "Cerrar sesión" la borra.
   const sesion = JSON.parse(localStorage.getItem('sesionActiva') || 'null');
-  if (sesion && sesion.tipo === 'ASESOR' && asesorInfo.codigo) {
-    sesionTipo = 'ASESOR';
-    goToScreen(1);
-  } else if (sesion && sesion.tipo === 'ADMIN') {
-    sesionTipo = 'ADMIN';
-    goToScreen(0);
-  } else if (sesion && sesion.tipo === 'ANALYTICS') {
-    sesionTipo = 'ANALYTICS';
-    goToScreen(5);
-  } else {
-    goToScreen('login');
-  }
+  if (sesion && sesion.tipo === 'ASESOR' && asesorInfo.codigo) sesionTipo = 'ASESOR';
+  else if (sesion && sesion.tipo === 'ADMIN') sesionTipo = 'ADMIN';
+  else if (sesion && sesion.tipo === 'ANALYTICS') sesionTipo = 'ANALYTICS';
+
+  // Abre la pantalla del link (si tiene permiso); si no, la de inicio de su sesión.
+  navegarDesdeHash();
+  window.addEventListener('hashchange', navegarDesdeHash);
 };
