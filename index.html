@@ -555,6 +555,16 @@
     // Registra el Service Worker para que la app sea instalable ("Agregar a
     // pantalla de inicio") y funcione sin conexión como una app nativa.
     if ('serviceWorker' in navigator) {
+      // Si un Service Worker nuevo reemplaza al anterior (se subió una versión
+      // nueva), recarga una sola vez para mostrarla de inmediato. No recarga
+      // en la primera instalación, cuando todavía no había uno controlando.
+      const habiaControlador = !!navigator.serviceWorker.controller;
+      let recargado = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!habiaControlador || recargado) return;
+        recargado = true;
+        window.location.reload();
+      });
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js').catch((err) => {
           console.warn('[DataPrice] No se pudo registrar el Service Worker:', err);

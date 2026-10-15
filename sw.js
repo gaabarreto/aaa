@@ -1,9 +1,14 @@
 /* Service Worker de DataPrice Vzla.
    Cachea el "cascarón" de la app (HTML/JS/CSS/maestros JSON/íconos) para que
-   abra instantáneo y funcione sin conexión, igual que ya lo hacía el sitio
-   en el navegador. Las llamadas a Firebase/CDNs externos NO se tocan: van
-   directo a la red, tal cual las maneja app.js. */
-const CACHE_NAME = 'dataprice-vzla-v1';
+   funcione sin conexión. Las llamadas a Firebase/CDNs externos NO se tocan:
+   van directo a la red, tal cual las maneja app.js.
+
+   Estrategia "red primero": siempre intenta traer la versión más nueva del
+   servidor (así, al subir cambios a Netlify, los asesores la ven al primer
+   intento). Solo si no hay señal, o la red tarda más de TIEMPO_ESPERA_RED,
+   usa la copia guardada. */
+const CACHE_NAME = 'dataprice-vzla-v2';
+const TIEMPO_ESPERA_RED = 4000;
 const ARCHIVOS_CASCARON = [
   './',
   './index.html',
@@ -39,19 +44,21 @@ self.addEventListener('fetch', (event) => {
   // Solo maneja archivos propios del mismo origen (no Firebase, no CDNs).
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
 
-  event.respondWith(
-    caches.match(event.request).then((cacheado) => {
-      const redFetch = fetch(event.request)
-        .then((respuesta) => {
-          if (respuesta && respuesta.ok) {
-            const clon = respuesta.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clon));
-          }
-          return respuesta;
-        })
-        .catch(() => cacheado); // sin conexión: usa lo cacheado
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    // cache: 'no-cache' evita que el navegador devuelva su propia copia vieja.
+    const redFetch = fetch(event.request, { cache: 'no-cache' }).then((respuesta) => {
+      if (respuesta && respuesta.ok) cache.put(event.request, respuesta.clone());
+      return respuesta;
+    });
 
-      return cacheado || redFetch;
-    })
-  );
+    const cacheado = await cache.match(event.request);
+    if (!cacheado) return redFetch; // nunca se guardó: no hay alternativa a la red
+
+    // Red con límite de tiempo: si no responde a tiempo o falla, usa la copia guardada
+    // (la descarga sigue por detrás y deja actualizada la copia para la próxima).
+    const tiempoAgotado = new Promise((resolve) => setTimeout(() => resolve(null), TIEMPO_ESPERA_RED));
+    const respuesta = await Promise.race([redFetch.catch(() => null), tiempoAgotado]);
+    return respuesta || cacheado;
+  })());
 });
