@@ -1651,21 +1651,67 @@ function onCambioSelectorImagenProducto() {
 
 // Desplegable con los productos que todavía no tienen imagen; elegir uno lo
 // selecciona arriba para subirle la foto directo.
+// Lista desplegable con los productos que todavía no tienen imagen. El texto
+// se puede seleccionar y copiar (para buscar la foto), y cada fila tiene un
+// botón para copiar el nombre y otro para elegirlo arriba y subirle la foto.
+let productosSinImagenActual = [];
+
 function renderProductosSinImagen() {
-  const sel = document.getElementById("img-select-sin-imagen");
-  if (!sel) return;
-  const sinImagen = MAESTRO_PRODUCTOS.filter(p => p.producto && !IMAGENES_PRODUCTOS_INDICE.has(slugProducto(p.producto)))
+  const lista = document.getElementById("img-sin-imagen-lista");
+  if (!lista) return;
+  productosSinImagenActual = MAESTRO_PRODUCTOS.filter(p => p.producto && !IMAGENES_PRODUCTOS_INDICE.has(slugProducto(p.producto)))
     .sort((a, b) => (Number(a.id) || Infinity) - (Number(b.id) || Infinity) || a.producto.localeCompare(b.producto));
-  sel.innerHTML = `<option value="">${sinImagen.length ? `Productos sin imagen (${sinImagen.length})` : "Todos los productos tienen imagen"}</option>` +
-    sinImagen.map(p => `<option value="${escHtml(p.producto)}">${p.id ? escHtml(p.id) + " - " : ""}${escHtml(p.producto)}</option>`).join("");
-  sel.disabled = !sinImagen.length;
+  const n = productosSinImagenActual.length;
+  document.getElementById("img-sin-imagen-titulo").textContent = n ? `Productos sin imagen (${n})` : "Todos los productos tienen imagen";
+  document.getElementById("btn-copiar-sin-imagen").classList.toggle("hidden", !n);
+  lista.innerHTML = productosSinImagenActual.map((p, i) => `
+    <li class="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-amber-50/60">
+      <span class="text-gray-400 font-bold w-10 flex-shrink-0">${p.id ? "#" + escHtml(p.id) : ""}</span>
+      <span class="flex-1 min-w-0 text-gray-800 font-semibold select-all break-words">${escHtml(p.producto)}</span>
+      <button type="button" onclick="copiarProductoSinImagen(${i}, this)" title="Copiar nombre" class="flex-shrink-0 text-gray-500 hover:text-blue-600 hover:bg-blue-50 w-7 h-7 rounded-md transition"><i class="fa-regular fa-copy"></i></button>
+      <button type="button" onclick="elegirProductoSinImagen(${i})" title="Elegir para subirle la imagen" class="flex-shrink-0 text-gray-500 hover:text-blue-600 hover:bg-blue-50 w-7 h-7 rounded-md transition"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>
+    </li>`).join("");
 }
 
-function elegirProductoSinImagen() {
-  const nombre = document.getElementById("img-select-sin-imagen").value;
-  if (!nombre) return;
-  document.getElementById("img-select-producto").value = nombre;
+async function copiarTexto(texto) {
+  try {
+    await navigator.clipboard.writeText(texto);
+    return true;
+  } catch (err) {
+    // Respaldo para navegadores que bloquean el portapapeles.
+    const area = document.createElement("textarea");
+    area.value = texto;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    return ok;
+  }
+}
+
+async function copiarProductoSinImagen(i, boton) {
+  const p = productosSinImagenActual[i];
+  if (!p || !(await copiarTexto(p.producto))) return;
+  boton.innerHTML = '<i class="fa-solid fa-check text-emerald-600"></i>';
+  setTimeout(() => { boton.innerHTML = '<i class="fa-regular fa-copy"></i>'; }, 1200);
+}
+
+async function copiarListaSinImagen() {
+  const texto = productosSinImagenActual.map(p => (p.id ? p.id + "\t" : "") + p.producto).join("\n");
+  if (!texto || !(await copiarTexto(texto))) return;
+  const boton = document.getElementById("btn-copiar-sin-imagen");
+  boton.innerHTML = '<i class="fa-solid fa-check"></i> Copiada';
+  setTimeout(() => { boton.innerHTML = '<i class="fa-regular fa-copy"></i> Copiar lista'; }, 1500);
+}
+
+function elegirProductoSinImagen(i) {
+  const p = productosSinImagenActual[i];
+  if (!p) return;
+  document.getElementById("img-select-producto").value = p.producto;
   onCambioSelectorImagenProducto();
+  document.getElementById("img-select-producto").scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 async function onSubirImagenProducto(event) {

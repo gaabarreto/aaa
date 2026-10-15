@@ -161,10 +161,14 @@
             <span id="img-preview-label" class="text-xs text-gray-400">Sin imagen</span>
           </div>
         </div>
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-circle-exclamation text-amber-500 text-xs"></i>
-          <select id="img-select-sin-imagen" onchange="elegirProductoSinImagen()" class="flex-1 sm:flex-none sm:w-1/2 border border-amber-200 bg-amber-50 text-amber-800 font-semibold rounded-lg p-1.5 text-xs"></select>
-        </div>
+        <details id="img-sin-imagen" class="border border-amber-200 bg-amber-50 rounded-lg">
+          <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-amber-800 flex items-center gap-2">
+            <i class="fa-solid fa-circle-exclamation text-amber-500"></i>
+            <span id="img-sin-imagen-titulo" class="flex-1">Productos sin imagen</span>
+            <button type="button" id="btn-copiar-sin-imagen" onclick="event.preventDefault(); copiarListaSinImagen()" class="bg-white border border-amber-300 hover:bg-amber-100 text-amber-800 font-bold px-2.5 py-1 rounded-md text-[11px] transition"><i class="fa-regular fa-copy"></i> Copiar lista</button>
+          </summary>
+          <ul id="img-sin-imagen-lista" class="max-h-64 overflow-y-auto custom-scrollbar divide-y divide-amber-100 border-t border-amber-200 bg-white rounded-b-lg"></ul>
+        </details>
         <div class="flex flex-wrap gap-3">
           <input type="file" id="upload-imagen-producto" accept="image/*" class="hidden" onchange="onSubirImagenProducto(event)">
           <button onclick="document.getElementById('upload-imagen-producto').click()" class="bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 font-bold px-4 py-2 rounded-lg text-xs transition">
