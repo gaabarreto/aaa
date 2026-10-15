@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DataPrice Vzla - Sistema de Toma de Precios y Analytics</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="DataPrice">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" onerror="this.onerror=null;document.write('<script src=\'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js\'><\/script>')"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" onerror="this.onerror=null;document.write('<script src=\'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js\'><\/script>')"></script>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col antialiased">
+
+  <header class="bg-white text-slate-900 border-b border-gray-200 shadow-sm sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="irAInicioSesion()">
+        <div class="bg-blue-600 p-2 rounded-lg text-white shadow">
+          <i class="fa-solid fa-tags text-xl"></i>
+        </div>
+        <div>
+          <span class="text-xl font-black tracking-wider text-slate-900">DataPrice<span class="text-blue-600">.Vzla</span></span>
+          <span class="block text-[10px] text-gray-500 font-medium tracking-tight">Captura &amp; Business Intelligence SURA</span>
+        </div>
+      </div>
+      <div class="flex items-center space-x-2 sm:space-x-3" id="navbar-actions">
+        <button onclick="cerrarSesion()" id="btn-cerrar-sesion" class="hidden text-xs text-gray-500 hover:text-blue-600 font-semibold px-3 py-1.5 rounded-lg hover:bg-blue-50 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-right-from-bracket"></i><span class="hidden sm:inline">Cerrar sesión</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+
+    <!-- ==================== PANTALLA LOGIN ==================== -->
+    <div id="screen-login" class="max-w-sm mx-auto bg-white rounded-2xl shadow-md border border-gray-100 p-8 space-y-6 mt-10 sm:mt-16">
+      <div class="text-center space-y-2">
+        <div class="w-16 h-16 mx-auto bg-blue-50 rounded-full flex items-center justify-center text-blue-600 text-2xl">
+          <i class="fa-solid fa-key"></i>
+        </div>
+        <h2 class="text-xl font-black text-gray-900">Iniciar Sesión</h2>
+        <p class="text-xs text-gray-500">Asesores: ingresa tu código de vendedor. Administradores: tu usuario de acceso.</p>
+      </div>
+      <form id="form-login" class="space-y-3" onsubmit="event.preventDefault(); intentarLogin();">
+        <div>
+          <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Código / Usuario</label>
+          <input type="text" id="login-codigo" placeholder="Ej. CCA001" autocomplete="off" class="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white uppercase">
+        </div>
+        <p id="login-error" class="hidden text-xs text-rose-600 font-semibold"></p>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow transition text-sm flex items-center justify-center space-x-2">
+          <span>Ingresar</span>
+          <i class="fa-solid fa-arrow-right text-xs"></i>
+        </button>
+      </form>
+    </div>
+
+    <!-- ==================== PANTALLA 0: SELECCIÓN DE MODO (solo Administrador) ==================== -->
+    <div id="screen-0" class="max-w-2xl mx-auto space-y-8 py-10 hidden">
+      <div class="text-center space-y-2">
+        <h2 class="text-3xl font-black text-gray-900">Selecciona tu Rol</h2>
+        <p class="text-sm text-gray-500">Elige el modo de trabajo para continuar.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <button onclick="seleccionarModo('ASESOR')" class="bg-white p-8 rounded-2xl shadow-sm hover:shadow-xl border border-gray-200 hover:border-blue-500 transition group text-left flex flex-col items-center text-center space-y-4">
+          <div class="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 text-3xl group-hover:scale-110 transition duration-300">
+            <i class="fa-solid fa-clipboard-user"></i>
+          </div>
+          <div>
+            <h3 class="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition">Modo Asesor</h3>
+            <p class="text-xs text-gray-500 mt-2">Captura de precios offline. Rutas, validaciones y subida a BD.</p>
+          </div>
+        </button>
+
+        <button onclick="goToScreen(5)" class="bg-white p-8 rounded-2xl shadow-sm hover:shadow-xl border border-gray-200 hover:border-blue-500 transition group text-left flex flex-col items-center text-center space-y-4">
+          <div class="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center text-emerald-600 text-3xl group-hover:scale-110 transition duration-300">
+            <i class="fa-solid fa-chart-pie"></i>
+          </div>
+          <div>
+            <h3 class="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition">Analytics</h3>
+            <p class="text-xs text-gray-500 mt-2">Analytics BI, reportes exportables.</p>
+          </div>
+        </button>
+
+        <button onclick="seleccionarModo('DESARROLLADOR')" class="bg-white p-8 rounded-2xl shadow-sm hover:shadow-xl border border-gray-200 hover:border-blue-500 transition group text-left flex flex-col items-center text-center space-y-4">
+          <div class="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 text-3xl group-hover:scale-110 transition duration-300">
+            <i class="fa-solid fa-laptop-code"></i>
+          </div>
+          <div>
+            <h3 class="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition">Modo Administrador</h3>
+            <p class="text-xs text-gray-500 mt-2">Carga de Maestros (Clientes y Productos).</p>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== PANTALLA 6: ADMINISTRADOR (CARGA DE MAESTRAS) ==================== -->
+    <div id="screen-6" class="max-w-4xl mx-auto space-y-6 hidden">
+      <div class="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div>
+          <span class="text-xs font-bold text-blue-600 uppercase tracking-widest">Panel de Control</span>
+          <h2 class="text-2xl font-black mt-1 text-slate-900">Configuración y Maestras</h2>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
+          <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center text-xl">
+            <i class="fa-solid fa-users"></i>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-gray-900">Maestra de Clientes y Asesores</h3>
+            <p class="text-xs text-gray-500 mt-1">Sube el Excel con columnas: CodigoCliente, DescripcionCliente, RegionCli, DescripEstado, ciudad, Canal, CodVendedor, NombreVendedor. Actualiza clientes Y asesores a la vez, sincronizado a todos los dispositivos.</p>
+          </div>
+          <input type="file" id="upload-clientes" accept=".xlsx, .xls" class="hidden" onchange="cargarMaestroClientes(event)">
+          <button onclick="document.getElementById('upload-clientes').click()" class="w-full bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 font-bold py-2.5 rounded-lg text-sm transition">
+            Subir Excel de Clientes
+          </button>
+          <p id="status-clientes" class="text-xs font-bold text-emerald-600 text-center"></p>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
+          <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center text-xl">
+            <i class="fa-solid fa-boxes-stacked"></i>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-gray-900">Maestra de Productos</h3>
+            <p class="text-xs text-gray-500 mt-1">Sube un Excel con columnas: Producto, Linea, Sublinea, Size Real, Marca, Gama, Identificador, Size Unificado, Tipo, Categoria.</p>
+          </div>
+          <input type="file" id="upload-productos" accept=".xlsx, .xls" class="hidden" onchange="cargarMaestroProductos(event)">
+          <button onclick="document.getElementById('upload-productos').click()" class="w-full bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 font-bold py-2.5 rounded-lg text-sm transition">
+            Subir Excel de Productos
+          </button>
+          <p id="status-productos" class="text-xs font-bold text-emerald-600 text-center"></p>
+        </div>
+      </div>
+
+      <!-- Imágenes de referencia de productos -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
+        <div class="flex items-center space-x-3">
+          <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center text-xl"><i class="fa-solid fa-image"></i></div>
+          <div>
+            <h3 class="text-lg font-bold text-gray-900">Imágenes de Referencia de Productos</h3>
+            <p class="text-xs text-gray-500 mt-1">Se muestran como miniatura junto al producto en la pantalla de captura.</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <select id="img-select-producto" onchange="onCambioSelectorImagenProducto()" class="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white"></select>
+          <div class="flex items-center gap-3">
+            <img id="img-preview-actual" src="" onclick="mostrarImagenAmpliada(this.src)" class="hidden w-12 h-12 rounded-lg object-cover border border-gray-200 cursor-zoom-in hover:ring-2 hover:ring-blue-400 transition">
+            <div id="img-preview-vacio" class="w-12 h-12 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-300"><i class="fa-solid fa-image text-sm"></i></div>
+            <span id="img-preview-label" class="text-xs text-gray-400">Sin imagen</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-circle-exclamation text-amber-500 text-xs"></i>
+          <select id="img-select-sin-imagen" onchange="elegirProductoSinImagen()" class="flex-1 sm:flex-none sm:w-1/2 border border-amber-200 bg-amber-50 text-amber-800 font-semibold rounded-lg p-1.5 text-xs"></select>
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <input type="file" id="upload-imagen-producto" accept="image/*" class="hidden" onchange="onSubirImagenProducto(event)">
+          <button onclick="document.getElementById('upload-imagen-producto').click()" class="bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 font-bold px-4 py-2 rounded-lg text-xs transition">
+            Subir/Reemplazar Imagen
+          </button>
+          <button onclick="onQuitarImagenProducto()" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-600 font-bold px-4 py-2 rounded-lg text-xs transition">
+            Quitar Imagen
+          </button>
+        </div>
+        <p id="status-imagen-producto" class="text-xs font-bold text-emerald-600"></p>
+
+        <div class="border-t border-gray-100 pt-4 space-y-2">
+          <p class="text-xs font-bold text-gray-700">Subida masiva</p>
+          <p class="text-[11px] text-gray-500">Selecciona varias imágenes a la vez. Nombra cada archivo con el <b>ID</b> del producto en la maestra y se asigna solo. Ej: <code class="bg-gray-100 px-1 rounded">45.jpg</code> → producto con ID 45. También acepta el nombre exacto del producto (ej. <code class="bg-gray-100 px-1 rounded">ADI GEL FIJADOR 100 GR.jpg</code>).</p>
+          <input type="file" id="upload-imagenes-masivo" accept="image/*" multiple class="hidden" onchange="onSubirImagenesMasivo(event)">
+          <button onclick="document.getElementById('upload-imagenes-masivo').click()" class="bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 font-bold px-4 py-2 rounded-lg text-xs transition">
+            <i class="fa-solid fa-images"></i> Subir Varias Imágenes
+          </button>
+          <p id="status-imagen-masivo" class="text-xs font-bold text-emerald-600"></p>
+        </div>
+      </div>
+
+      <!-- Orden de visualización: Categorías / Sublíneas / Productos -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4 md:col-span-2">
+        <div class="flex items-center space-x-3">
+          <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center text-xl"><i class="fa-solid fa-arrow-down-up-across-line"></i></div>
+          <div>
+            <h3 class="text-lg font-bold text-gray-900">Orden de Visualización</h3>
+            <p class="text-xs text-gray-500 mt-1">Arrastra los elementos con el ícono <i class="fa-solid fa-grip-lines"></i> para cambiar el orden en que el asesor los ve al capturar.</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Nivel</label>
+            <select id="orden-select-categoria" onchange="cambiarNivelOrdenCategoria()" class="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white"></select>
+          </div>
+          <div id="orden-contenedor-sublinea" class="hidden">
+            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Sublínea (opcional: ordenar sus productos)</label>
+            <select id="orden-select-sublinea" onchange="cambiarNivelOrdenSublinea()" class="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white"></select>
+          </div>
+        </div>
+        <ul id="orden-lista" class="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden"></ul>
+        <div class="flex items-center gap-3">
+          <button onclick="guardarOrdenActual()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2 rounded-lg text-xs transition">Guardar Orden</button>
+          <p id="status-orden" class="text-xs font-bold text-emerald-600"></p>
+        </div>
+      </div>
+
+      <!-- Vistas: activar / inactivar categorías, sublíneas y productos para la toma de precio -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
+        <div class="flex items-center space-x-3">
+          <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center text-xl"><i class="fa-solid fa-eye"></i></div>
+          <div>
+            <h3 class="text-lg font-bold text-gray-900">Vistas de Toma de Precio</h3>
+            <p class="text-xs text-gray-500 mt-1">Activa o inactiva categorías, sublíneas o productos. Lo inactivo no le aparece al asesor al tomar precios (los datos históricos en Analytics no se tocan). Se guarda solo y se sincroniza a todos los dispositivos.</p>
+          </div>
+        </div>
+        <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div class="relative flex-1">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+            <input id="vistas-buscar" type="text" oninput="renderVistas()" placeholder="Buscar categoría, sublínea, producto o ID..." class="w-full border border-gray-300 rounded-lg pl-8 pr-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <span id="vistas-resumen" class="text-xs font-bold text-gray-500"></span>
+        </div>
+        <div id="vistas-arbol" class="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-[32rem] overflow-y-auto custom-scrollbar"></div>
+        <p id="status-vistas" class="text-xs font-bold text-emerald-600"></p>
+      </div>
+    </div>
+
+    <!-- ==================== PANTALLA 1: DATOS CLIENTE Y UBICACIÓN ==================== -->
+    <div id="screen-1" class="max-w-xl mx-auto bg-white rounded-2xl shadow-md border border-gray-100 p-6 sm:p-8 space-y-6 hidden">
+      <div class="bg-gradient-to-r from-blue-50 to-blue-50 border-l-4 border-blue-600 p-4 rounded-r-xl flex justify-between items-center">
+        <div class="flex items-start space-x-3">
+          <i class="fa-solid fa-user-check text-blue-600 text-xl mt-0.5"></i>
+          <div>
+            <p class="text-blue-900 font-bold text-sm">Sesión Activa - Asesor / Ruta</p>
+            <p class="text-blue-700 text-xs mt-0.5">Asesor: <strong id="lbl-nombre-asesor" class="text-blue-900">No configurado</strong> | Ruta: <strong id="lbl-ruta-asesor" class="text-blue-900">N/A</strong></p>
+          </div>
+        </div>
+        <button onclick="abrirModalAsesor()" class="text-blue-600 hover:bg-blue-100 p-2 rounded-lg transition text-sm" title="Editar Perfil Asesor">
+          <i class="fa-solid fa-pen-to-square"></i>
+        </button>
+      </div>
+
+      <div>
+        <h2 class="text-2xl font-bold text-gray-900">Punto de Venta / Cliente</h2>
+        <p class="text-xs text-gray-500 mt-1">Busca y selecciona el cliente en la lista maestra.</p>
+      </div>
+
+      <form id="form-cliente" class="space-y-4" onsubmit="event.preventDefault(); iniciarCaptura();">
+        <div class="relative">
+          <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Buscar Cliente</label>
+          <div class="relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-gray-400"></i>
+            <input type="text" id="input-search-cliente" placeholder="Escribe el nombre del cliente..." autocomplete="off" onkeyup="filtrarClientesDropdown()" onfocus="mostrarDropdownClientes()" class="w-full border border-gray-300 rounded-lg pl-10 pr-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
+          </div>
+          <ul id="dropdown-clientes" class="custom-scrollbar absolute z-10 w-full bg-white border border-gray-200 shadow-xl max-h-48 overflow-y-auto rounded-lg mt-1 hidden"></ul>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Código del Cliente</label>
+            <input type="text" id="cod-cliente" required readonly placeholder="Autocompletado..." class="w-full border border-gray-300 rounded-lg px-3.5 py-2 text-sm bg-gray-100 text-gray-600 font-bold cursor-not-allowed">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Fecha de Registro</label>
+            <input type="date" id="fecha-captura" required class="w-full border border-gray-300 rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white transition">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Canal de Ventas</label>
+          <select id="select-canal" required class="w-full border border-gray-300 rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 text-gray-600 cursor-not-allowed" style="pointer-events:none;">
+            <option value="Cuentas Clave">Cuentas Claves</option>
+            <option value="Clientes Especiales">Clientes Especiales</option>
+            <option value="Tradicional" selected>Canal Tradicional</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Región</label>
+            <input type="text" id="select-region" required readonly placeholder="Autocompletado..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-gray-100 text-gray-600 font-bold cursor-not-allowed">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Estado</label>
+            <input type="text" id="select-estado" readonly placeholder="Autocompletado..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-gray-100 text-gray-600 font-bold cursor-not-allowed">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Ciudad</label>
+            <input type="text" id="select-ciudad" readonly placeholder="Autocompletado..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-gray-100 text-gray-600 font-bold cursor-not-allowed">
+          </div>
+        </div>
+
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition duration-200 flex items-center justify-center space-x-2 text-sm mt-4">
+          <span>Siguiente: Categorías</span>
+          <i class="fa-solid fa-arrow-right text-xs"></i>
+        </button>
+      </form>
+    </div>
+
+    <!-- ==================== PANTALLAS DE CAPTURA (2, 3, 4) ==================== -->
+    <div id="screen-2" class="space-y-6 hidden">
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div class="flex items-center space-x-3">
+          <div class="p-3 bg-blue-100 text-blue-700 rounded-xl">
+            <i class="fa-solid fa-store text-xl"></i>
+          </div>
+          <div>
+            <span class="text-[10px] font-black text-blue-600 uppercase tracking-widest">Cliente Activo</span>
+            <h3 id="resumen-nombre-s2" class="text-lg font-bold text-gray-900"></h3>
+            <p id="resumen-info-s2" class="text-xs text-gray-500"></p>
+          </div>
+        </div>
+        <button onclick="cambiarCliente()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold px-4 py-2 rounded-lg transition flex items-center space-x-2 border border-gray-200">
+          <i class="fa-solid fa-user-pen"></i><span>Cambiar Cliente</span>
+        </button>
+      </div>
+      <div>
+        <h2 class="text-2xl font-black text-gray-900">Menú 1: Categorías de Producto</h2>
+        <p class="text-sm text-gray-500">Selecciona la categoría que deseas auditar en esta visita.</p>
+      </div>
+      <div id="container-categorias" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
+    </div>
+
+    <div id="screen-3" class="space-y-6 hidden">
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div class="flex items-center space-x-3">
+          <div class="p-3 bg-blue-100 text-blue-700 rounded-xl"><i class="fa-solid fa-store text-lg"></i></div>
+          <div>
+            <span class="text-[10px] font-black text-blue-600 uppercase tracking-widest">Cliente Activo</span>
+            <h3 id="resumen-nombre-s3" class="text-base font-bold text-gray-900"></h3>
+            <p id="resumen-info-s3" class="text-xs text-gray-500"></p>
+          </div>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button onclick="goToScreen(2)" class="text-blue-600 hover:text-blue-800 text-xs font-bold px-3 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-50 transition flex items-center space-x-1">
+            <i class="fa-solid fa-arrow-left"></i><span>Volver</span>
+          </button>
+        </div>
+      </div>
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-200 pb-3">
+        <div><span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Categoría Seleccionada</span><h2 id="titulo-categoria-activa" class="text-2xl font-black text-gray-900"></h2></div>
+      </div>
+      <div id="container-sublineas" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </div>
+
+    <div id="screen-4" class="space-y-6 hidden">
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+          <div class="flex items-center space-x-2 text-xs font-bold text-gray-500"><span id="bc-categoria" class="text-blue-600"></span><i class="fa-solid fa-chevron-right text-[10px]"></i><span id="bc-sublinea" class="text-gray-900"></span></div>
+          <span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-3 py-1 rounded-full flex items-center space-x-1"><i class="fa-solid fa-barcode text-xs"></i><span id="count-productos-badge">0 Productos</span></span>
+        </div>
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+          <div><h2 id="titulo-sublinea-activa" class="text-xl font-extrabold text-gray-900"></h2><p class="text-xs text-gray-500">Ingresa los precios en anaquel ($ USD). Deja vacío si no hay.</p></div>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="p-4 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-3">
+          <div class="relative w-full sm:w-72">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-gray-400 text-xs"></i>
+            <input type="text" id="search-producto-input" onkeyup="filtrarTablaProductos()" placeholder="Buscar producto o marca..." class="w-full pl-9 pr-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          </div>
+        </div>
+        <div class="hidden sm:flex bg-slate-100 border-b border-gray-200 text-[11px] font-black uppercase tracking-wider text-slate-600 py-2.5 px-4">
+          <span class="flex-1">Producto (Maestro)</span>
+          <span class="w-36 flex-shrink-0 text-right">Precio ($ USD)</span>
+        </div>
+        <div id="lista-productos-body" class="divide-y divide-gray-100 custom-scrollbar"></div>
+        <div class="p-4 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-3">
+          <button onclick="goToScreen(3)" class="w-full sm:w-auto px-5 py-2.5 border border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-100 transition text-xs flex items-center justify-center space-x-2"><i class="fa-solid fa-arrow-left"></i><span>Atrás</span></button>
+          <div class="flex items-center space-x-3 w-full sm:w-auto">
+            <button onclick="guardarPreciosToma()" class="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-md transition text-xs flex items-center justify-center space-x-2"><i class="fa-solid fa-floppy-disk"></i><span>Guardar Precios</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== PANTALLA 5: DASHBOARD ==================== -->
+    <div id="screen-5" class="space-y-6 hidden">
+      <div class="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <span class="text-xs font-bold text-blue-600 uppercase tracking-widest">Business Intelligence</span>
+          <h2 class="text-2xl font-black mt-1 text-slate-900">Visualizador Analytics SURA</h2>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button onclick="exportarExcel()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition flex items-center space-x-2"><i class="fa-solid fa-file-excel"></i><span>Exportar BD a Excel</span></button>
+        </div>
+      </div>
+
+      <!-- FILTROS -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-gray-100 pb-3"><h3 class="text-sm font-bold text-gray-800 flex items-center space-x-2"><i class="fa-solid fa-filter text-blue-600"></i><span>Filtros Globales de Consulta</span></h3><button onclick="limpiarFiltrosVisualizador()" class="text-xs text-blue-600 font-semibold"><i class="fa-solid fa-rotate-left"></i> Limpiar Filtros</button></div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-3">
+          <div><label class="block text-[10px] font-bold text-gray-500 uppercase">Región</label><select id="filter-region" onchange="onFilterRegionChange()" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs bg-white"><option value="">Todas</option></select></div>
+          <div><label class="block text-[10px] font-bold text-gray-500 uppercase">Estado</label><select id="filter-estado" onchange="onFilterEstadoChange()" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs bg-white"><option value="">Todos</option></select></div>
+          <div><label class="block text-[10px] font-bold text-gray-500 uppercase">Ciudad</label><select id="filter-ciudad" onchange="aplicarFiltrosDashboard()" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs bg-white"><option value="">Todas</option></select></div>
+          <div><label class="block text-[10px] font-bold text-gray-500 uppercase">Canal Ventas</label><select id="filter-canal" onchange="aplicarFiltrosDashboard()" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs bg-white"><option value="">Todos</option></select></div>
+          <div><label class="block text-[10px] font-bold text-gray-500 uppercase">Categoría</label><select id="filter-categoria" onchange="onFilterCategoriaChange()" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs bg-white"><option value="">Todas</option></select></div>
+          <div><label class="block text-[10px] font-bold text-gray-500 uppercase">Sublínea</label><select id="filter-sublinea" onchange="onFilterSublineaChange()" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs bg-white"><option value="">Todas</option></select></div>
+          <div><label class="block text-[10px] font-bold text-gray-500 uppercase">Size Unificado</label><select id="filter-size" onchange="aplicarFiltrosDashboard()" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs bg-white"><option value="">Todos</option></select></div>
+          <div><label class="block text-[10px] font-bold text-gray-500 uppercase">Desde</label><input type="date" id="filter-fecha-inicio" onchange="aplicarFiltrosDashboard()" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs bg-white"></div>
+          <div><label class="block text-[10px] font-bold text-gray-500 uppercase">Hasta</label><input type="date" id="filter-fecha-fin" onchange="aplicarFiltrosDashboard()" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs bg-white"></div>
+        </div>
+      </div>
+
+      <!-- KPIS -->
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-emerald-500"><p class="text-[10px] font-bold text-gray-400 uppercase">Precio Mínimo</p><h3 id="kpi-min-precio" class="text-xl sm:text-2xl font-black text-gray-900 mt-1">$0.00</h3></div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-rose-500"><p class="text-[10px] font-bold text-gray-400 uppercase">Precio Máximo</p><h3 id="kpi-max-precio" class="text-xl sm:text-2xl font-black text-gray-900 mt-1">$0.00</h3></div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-blue-600"><p class="text-[10px] font-bold text-gray-400 uppercase">Precio Promedio</p><h3 id="kpi-avg-precio" class="text-xl sm:text-2xl font-black text-blue-700 mt-1">$0.00</h3></div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-amber-500"><p class="text-[10px] font-bold text-gray-400 uppercase">Precios Tomados</p><h3 id="kpi-count-precios" class="text-xl sm:text-2xl font-black text-gray-900 mt-1">0</h3></div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-blue-600 col-span-2 lg:col-span-1"><p class="text-[10px] font-bold text-gray-400 uppercase">Prom. SURA vs Comp.</p><div class="flex items-baseline space-x-2 mt-1"><span id="kpi-sura-avg" class="text-lg font-black text-blue-700">$0.00</span><span class="text-xs text-gray-400">vs</span><span id="kpi-comp-avg" class="text-lg font-black text-slate-700">$0.00</span></div><p id="kpi-diff-pct" class="text-[11px] font-bold text-gray-500">Diferencial: 0.0%</p></div>
+      </div>
+
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-4">
+        <div class="flex items-center justify-between border-b border-gray-100 pb-3"><div><h4 class="font-extrabold text-gray-900 text-sm flex items-center space-x-2"><i class="fa-solid fa-chart-line text-blue-600"></i><span>Tendencia de Precios Promedio por Fecha</span></h4><p class="text-[11px] text-gray-500">Evolución de precios: SURA vs Competencia</p></div></div>
+        <div class="relative h-72 w-full"><canvas id="chart-tendencia"></canvas></div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-4"><div class="flex items-center justify-between border-b border-gray-100 pb-3"><div><h4 class="font-extrabold text-gray-900 text-sm flex items-center space-x-2"><i class="fa-solid fa-chart-simple text-blue-600"></i><span>Precios Promedio por Producto</span></h4></div></div><div class="relative h-72 w-full"><canvas id="chart-barras-ordenadas"></canvas></div></div>
+        <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-4"><div class="flex items-center justify-between border-b border-gray-100 pb-3"><div><h4 class="font-extrabold text-gray-900 text-sm flex items-center space-x-2"><i class="fa-solid fa-code-compare text-blue-600"></i><span>Comparativa SURA vs Competencia (Categorías)</span></h4></div></div><div class="relative h-72 w-full"><canvas id="chart-sura-vs-competencia"></canvas></div></div>
+      </div>
+
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-4"><div class="flex items-center justify-between border-b border-gray-100 pb-3"><div><h4 class="font-extrabold text-gray-900 text-sm flex items-center space-x-2"><i class="fa-solid fa-ruler-combined text-blue-600"></i><span>Comparativa SURA vs Competencia (Size Unificado)</span></h4><p class="text-[11px] text-gray-500">Precio promedio por presentación/tamaño</p></div></div><div class="relative h-72 w-full"><canvas id="chart-sura-vs-competencia-size"></canvas></div></div>
+
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-4"><div class="flex items-center justify-between border-b border-gray-100 pb-3"><div><h4 class="font-extrabold text-gray-900 text-sm flex items-center space-x-2"><i class="fa-solid fa-fire text-amber-500"></i><span>Mapa de Calor de Precios Promedios (Región vs Categoría)</span></h4></div></div><div class="overflow-x-auto custom-scrollbar"><table class="w-full text-center text-xs border-collapse"><thead><tr id="heatmap-header-row" class="bg-gray-100 font-bold text-gray-700"><th class="py-2.5 px-3 text-left bg-gray-100 font-bold">Región</th></tr></thead><tbody id="heatmap-body-rows" class="divide-y divide-gray-100"></tbody></table></div></div>
+
+      <!-- TABLA DINÁMICA: Dispersión y Control de Precios (por Producto, filtrable por Tipo) -->
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+          <div>
+            <h4 class="font-extrabold text-gray-900 text-sm flex items-center space-x-2"><i class="fa-solid fa-table-cells text-blue-600"></i><span>Dispersión y Control de Precios</span></h4>
+            <p class="text-[11px] text-gray-500 mt-0.5">Haz clic en una Sublínea para expandir sus productos.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-[10px] font-bold text-gray-500 uppercase">Tipo</label>
+            <select id="filter-pivot-tipo" onchange="actualizarVisualizadorAnalytics()" class="border border-gray-300 rounded-lg p-1.5 text-xs bg-white">
+              <option value="AMBOS" selected>SURA vs Competencia</option>
+              <option value="SURA">SURA</option>
+              <option value="COMPETENCIA">Competencia</option>
+            </select>
+          </div>
+        </div>
+        <div class="overflow-x-auto custom-scrollbar">
+          <table class="w-full text-xs border-collapse">
+            <thead id="pivot-precios-header"></thead>
+            <tbody id="pivot-precios-body" class="divide-y divide-gray-100"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TABLA DINÁMICA (solo Administrador): Cobertura de Levantamiento por Asesor -->
+      <div id="panel-cobertura-asesor" class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-4 hidden">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+          <div>
+            <h4 class="font-extrabold text-gray-900 text-sm flex items-center space-x-2"><i class="fa-solid fa-user-clock text-blue-600"></i><span>Cobertura de Levantamiento por Asesor</span></h4>
+            <p class="text-[11px] text-gray-500 mt-0.5">Cantidad de precios tomados por asesor y mes — mide la adopción de la herramienta en campo.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <select id="filter-cobertura-modo" onchange="actualizarVisualizadorAnalytics()" class="border border-gray-300 rounded-lg p-1.5 text-xs bg-white">
+              <option value="TODOS" selected>Total Asesores</option>
+              <option value="CON_REGISTRO">Asesores con Registro</option>
+              <option value="SIN_REGISTRO">Asesores sin Registro</option>
+            </select>
+            <span class="text-[10px] font-bold bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full whitespace-nowrap">Solo Administrador</span>
+          </div>
+        </div>
+        <div class="overflow-x-auto custom-scrollbar">
+          <table class="w-full text-xs border-collapse">
+            <thead>
+              <tr id="cobertura-header" class="bg-slate-100 border-b border-gray-200 text-[11px] font-black uppercase tracking-wider text-slate-600"></tr>
+            </thead>
+            <tbody id="cobertura-body" class="divide-y divide-gray-100"></tbody>
+            <tfoot>
+              <tr id="cobertura-total-row" class="bg-slate-800 text-white font-black text-xs"></tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- MODAL CONFIG ASESOR -->
+  <div id="modal-config-asesor" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-5 transform transition-all">
+      <div class="text-center space-y-2 border-b border-gray-100 pb-4">
+        <div class="w-14 h-14 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto text-2xl"><i class="fa-solid fa-id-badge"></i></div>
+        <h3 class="text-xl font-black text-gray-900">Perfil del Asesor</h3>
+        <p class="text-xs text-gray-500">Ingresa tu código para cargar tu ruta y cartera de clientes.</p>
+      </div>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Código de Vendedor</label>
+          <input type="text" id="input-asesor-codigo" placeholder="Ej. CCA001" onkeyup="buscarVendedorPorCodigo()" class="w-full border border-gray-300 rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white uppercase">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Nombre Completo</label>
+          <input type="text" id="input-asesor-nombre" readonly placeholder="Autocompletado..." class="w-full border border-gray-300 rounded-lg px-3.5 py-2 text-sm bg-gray-100 text-gray-600 font-bold cursor-not-allowed">
+        </div>
+      </div>
+      <button onclick="guardarConfigAsesor()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl text-sm shadow transition">
+        Guardar y Continuar
+      </button>
+      <button onclick="document.getElementById('modal-config-asesor').classList.add('hidden')" class="w-full border border-gray-300 hover:bg-gray-100 text-gray-600 font-bold py-2 rounded-xl text-xs transition">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- MODAL EXITO AL GUARDAR -->
+  <!-- MODAL: imagen de producto ampliada (se abre al tocar la miniatura) -->
+  <div id="modal-imagen-ampliada" onclick="cerrarImagenAmpliada()" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden cursor-zoom-out">
+    <button onclick="cerrarImagenAmpliada()" class="absolute top-4 right-4 text-white/80 hover:text-white text-2xl w-10 h-10 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+    <img id="img-ampliada" src="" alt="" class="max-w-full max-h-[85vh] rounded-xl shadow-2xl" onclick="event.stopPropagation()">
+  </div>
+
+  <div id="modal-guardar-exito" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full text-center space-y-4">
+      <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-3xl"><i class="fa-solid fa-circle-check"></i></div>
+      <h3 class="text-xl font-black text-gray-900">Guardado Localmente</h3>
+      <p class="text-xs text-gray-500">Los registros han sido guardados sin conexión de manera segura.</p>
+      <div class="space-y-2 mt-4"><button onclick="document.getElementById('modal-guardar-exito').classList.add('hidden'); goToScreen(3);" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl text-xs">Siguiente Sublínea</button></div>
+    </div>
+  </div>
+
+  <!-- MODAL GENÉRICO DE MENSAJE (reemplaza alert()/confirm() nativos, mismo estilo que "Guardado Localmente") -->
+  <div id="modal-mensaje" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full text-center space-y-4">
+      <div id="modal-mensaje-icono" class="w-16 h-16 rounded-full flex items-center justify-center mx-auto text-3xl">
+        <i id="modal-mensaje-icono-fa" class="fa-solid"></i>
+      </div>
+      <h3 id="modal-mensaje-titulo" class="text-xl font-black text-gray-900"></h3>
+      <p id="modal-mensaje-texto" class="text-xs text-gray-500"></p>
+      <div class="space-y-2 mt-4">
+        <button id="modal-mensaje-btn-confirmar" class="w-full text-white font-bold py-3 rounded-xl text-xs shadow transition"></button>
+        <button id="modal-mensaje-btn-cancelar" class="hidden w-full border border-gray-300 hover:bg-gray-100 text-gray-600 font-bold py-2 rounded-xl text-xs transition">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase (sincronización de precios en la nube: Administrador/BI ven a todos los asesores) -->
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="./firebase-config.js"></script>
+  <script src="./app.js"></script>
+  <script>
+    // Registra el Service Worker para que la app sea instalable ("Agregar a
+    // pantalla de inicio") y funcione sin conexión como una app nativa.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch((err) => {
+          console.warn('[DataPrice] No se pudo registrar el Service Worker:', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
