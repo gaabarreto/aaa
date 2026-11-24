@@ -589,6 +589,23 @@ function obtenerProductosOrdenados(categoria, sublinea) {
   return ordenAutomaticoProductos(lista);
 }
 
+// Solo para mostrar (estilo CIMA): "ACONDICIONADOR DALAN 450 ML" -> "Acondicionador Dalan 450 ml".
+// Siglas sin vocales (BBK, 3N) quedan en mayúsculas; los datos guardados no cambian.
+const PALABRAS_MENORES = new Set(["de", "del", "la", "las", "el", "los", "en", "y", "con", "para", "sin", "a", "al", "por"]);
+const UNIDADES_MEDIDA = new Set(["ml", "gr", "grs", "g", "kg", "lt", "lts", "l", "und", "unds", "un", "cm", "mt", "mts", "oz", "cc", "x"]);
+function nombreLegible(texto) {
+  return (texto || "").toString().trim().split(/\s+/).map((palabra, i) => {
+    const min = palabra.toLowerCase();
+    const numerica = min.match(/^([\d.,x]+)([a-zñ]*)$/);
+    if (numerica && (!numerica[2] || UNIDADES_MEDIDA.has(numerica[2]))) return min; // 450ml, 1x50gr, 1.5
+    if (/\d/.test(palabra) || /^([a-zñ]\.)+[a-zñ]?$/i.test(palabra)) return palabra.toUpperCase(); // 3N, C.A.
+    if (UNIDADES_MEDIDA.has(min) && min.length > 1 && i > 0) return min; // "G" suelta es talla, no gramos
+    if (i > 0 && PALABRAS_MENORES.has(min)) return min;
+    if (!/[aeiouáéíóú]/i.test(palabra)) return palabra.toUpperCase(); // siglas: BBK
+    return min.replace(/(^|[-(])(\p{L})/gu, (_, sep, letra) => sep + letra.toUpperCase()); // Ti-Suf
+  }).join(" ");
+}
+
 /* ---------------- Price check (estilo CIMA) ----------------
    Una sola pantalla con la tarjeta del cliente y TODAS sus sublíneas
    (agrupadas por categoría), cada una con su estado para este cliente:
@@ -599,7 +616,7 @@ function estadoSublineaParaCliente(cat, sub) {
   const fechas = registrosPreciosDB
     .filter(r => r.codCliente === clienteActual.cod && normTxt(r.categoria) === normTxt(cat) && normTxt(r.sublinea) === normTxt(sub))
     .map(r => r.fecha).filter(Boolean).sort();
-  if (!fechas.length) return { clave: "NUNCA", texto: "Nunca", clase: "text-amber-500" };
+  if (!fechas.length) return { clave: "NUNCA", texto: "Nunca", clase: "text-amber-500" };  // ámbar CIMA
   const ultima = fechas[fechas.length - 1];
   if (ultima === clienteActual.fecha) return { clave: "HOY", texto: "Hoy", clase: "text-emerald-600" };
   const dias = Math.round((new Date(clienteActual.fecha) - new Date(ultima)) / 86400000);
@@ -623,18 +640,18 @@ function renderCategoriasMenu() {
     // Las pendientes arriba; las ya tomadas hoy bajan al final del grupo.
     filas.sort((a, b) => (a.estado.clave === "HOY") - (b.estado.clave === "HOY"));
     html += `<div class="space-y-1.5">
-      <p class="px-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">${escHtml(cat)}</p>
-      <div class="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">` +
+      <p class="px-1 text-[10px] font-medium uppercase tracking-wider text-gray-400">${escHtml(cat)}</p>
+      <div class="bg-white rounded-2xl shadow-sm divide-y divide-gray-100 overflow-hidden">` +
       filas.map(({ sub, estado, productos }) => {
         const i = priceCheckRefs.push({ cat, sub }) - 1;
         const hoy = estado.clave === "HOY";
-        return `<button type="button" onclick="abrirSublineaPriceCheck(${i})" class="w-full text-left flex items-center justify-between gap-3 px-4 py-3 hover:bg-blue-50/60 transition ${hoy ? "bg-emerald-50/40" : ""}">
-          <span class="min-w-0"><span class="block font-semibold text-sm text-gray-900">${escHtml(sub)}</span><span class="block text-[11px] text-gray-400">${productos} producto${productos === 1 ? "" : "s"}</span></span>
-          <span class="flex items-center gap-2 flex-shrink-0 text-xs font-semibold ${estado.clase}">${hoy ? '<i class="fa-solid fa-circle-check"></i>' : ""}${estado.texto}<i class="fa-solid fa-chevron-right text-gray-300 text-[10px]"></i></span>
+        return `<button type="button" onclick="abrirSublineaPriceCheck(${i})" class="w-full text-left flex items-center justify-between gap-3 px-4 py-3.5 transition ${hoy ? "bg-emerald-50 ring-2 ring-inset ring-emerald-600 rounded-2xl" : "hover:bg-gray-50"}">
+          <span class="min-w-0"><span class="block font-medium text-[15px] text-gray-900">${escHtml(nombreLegible(sub))}</span><span class="block text-xs text-gray-500 mt-0.5">${productos} producto${productos === 1 ? "" : "s"}</span></span>
+          <span class="flex items-center gap-1.5 flex-shrink-0 text-xs font-medium ${estado.clase}">${hoy ? '<i class="fa-solid fa-circle-check"></i>' : ""}${estado.texto}</span>
         </button>`;
       }).join("") + `</div></div>`;
   });
-  container.innerHTML = html || `<div class="bg-white rounded-2xl border border-gray-200 py-8 text-center text-xs text-gray-400 italic">No hay sublíneas activas para la toma.</div>`;
+  container.innerHTML = html || `<div class="bg-white rounded-2xl shadow-sm py-8 text-center text-xs text-gray-400 italic">No hay sublíneas activas para la toma.</div>`;
   document.getElementById("pc-te-tocan").textContent = `Te tocan ${total - hechas} de ${total}`;
 }
 
@@ -647,7 +664,7 @@ function abrirSublineaPriceCheck(i) {
 
 function seleccionarSublinea(sub) {
   sublineaSeleccionada = sub;
-  document.getElementById("titulo-sublinea-activa").textContent = sublineaSeleccionada;
+  document.getElementById("titulo-sublinea-activa").textContent = nombreLegible(sublineaSeleccionada);
   document.getElementById("subtitulo-sublinea-activa").textContent = `${clienteActual.nombre} · precios en dólares`;
   document.getElementById("search-producto-input").value = "";
   const productos = productosParaToma(categoriaSeleccionada, sublineaSeleccionada);
@@ -662,27 +679,27 @@ function seleccionarSublinea(sub) {
     const isSura = prod.tipo === "SURA";
     const slug = slugProducto(prod.producto);
     const row = document.createElement("div");
-    row.className = "item-producto-row px-4 py-3 transition";
+    row.className = "item-producto-row px-1 py-3 rounded-2xl transition";
     row.setAttribute("data-search", `${prod.producto} ${prod.marca}`.toLowerCase());
     row.setAttribute("data-no-esta", marcadoNoEsta ? "1" : "");
     row.innerHTML = `
       <div class="flex items-center gap-3">
-        <img id="img-prod-${slug}" src="" alt="" onclick="mostrarImagenAmpliada(this.src)" class="w-12 h-12 rounded-xl object-cover border border-gray-100 hidden flex-shrink-0 cursor-zoom-in">
-        <div id="img-prod-${slug}-placeholder" class="w-12 h-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center text-gray-300 flex-shrink-0"><i class="fa-solid fa-image text-sm"></i></div>
+        <img id="img-prod-${slug}" src="" alt="" onclick="mostrarImagenAmpliada(this.src)" class="w-14 h-14 rounded-2xl object-contain bg-white p-1 shadow-sm hidden flex-shrink-0 cursor-zoom-in">
+        <div id="img-prod-${slug}-placeholder" class="w-14 h-14 rounded-2xl bg-white shadow-sm flex items-center justify-center text-gray-300 flex-shrink-0"><i class="fa-solid fa-image"></i></div>
         <div class="min-w-0 flex-1">
-          <p class="font-semibold text-gray-900 text-sm leading-snug">${prod.producto}</p>
-          <p class="text-xs text-gray-500 mt-0.5">${prod.marca} · <span class="font-semibold ${isSura ? "text-blue-700" : "text-gray-600"}">${prod.size || "-"}</span>${isSura ? ' <span class="ml-1 text-[9px] font-black tracking-wider text-blue-700 bg-blue-50 border border-blue-100 rounded px-1 py-0.5">SURA</span>' : ""}</p>
+          <p class="font-medium text-gray-900 text-sm leading-snug">${escHtml(nombreLegible(prod.producto))}</p>
+          <p class="text-xs text-gray-500 mt-1 flex items-center gap-1 flex-wrap">${isSura ? '<span class="text-[10px] font-bold text-blue-600 bg-blue-50 rounded px-1.5 py-0.5 mr-0.5">SURA</span>' : ""}<span>${escHtml(nombreLegible(prod.marca))}</span><span>·</span><span>${escHtml(nombreLegible(prod.size) || "-")}</span></p>
         </div>
         <div class="relative w-28 flex-shrink-0">
-          <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 font-semibold text-sm">$</span>
-          <input type="text" inputmode="numeric" autocomplete="off" placeholder="" value="${valPrecio}" data-producto="${prod.producto}" data-marca="${prod.marca}" data-tipo="${prod.tipo}" data-size="${prod.size || ''}" onkeydown="manejarTeclaPrecioATM(event)" onpaste="manejarPegadoPrecioATM(event)" class="input-precio-prod w-full bg-gray-50 border border-transparent rounded-xl pl-7 pr-3 py-2.5 text-right font-bold text-gray-900 text-base focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition">
+          <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-gray-500 text-sm">$</span>
+          <input type="text" inputmode="numeric" autocomplete="off" placeholder="" value="${valPrecio}" data-producto="${prod.producto}" data-marca="${prod.marca}" data-tipo="${prod.tipo}" data-size="${prod.size || ''}" onkeydown="manejarTeclaPrecioATM(event)" onpaste="manejarPegadoPrecioATM(event)" class="input-precio-prod w-full bg-white rounded-2xl shadow-sm border border-transparent pl-7 pr-3.5 py-3 text-right font-medium text-gray-900 text-base focus:border-blue-500 outline-none transition">
         </div>
       </div>
-      <div class="flex items-center justify-end gap-2 mt-1.5">
-        <label class="etiqueta-cantidad flex items-center gap-1.5 text-[11px] text-gray-400 font-semibold">Cant.
-          <input type="text" inputmode="numeric" autocomplete="off" value="${valCantidad}" title="Cantidad contada en anaquel" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4)" class="input-cantidad-prod w-14 bg-gray-50 border border-transparent rounded-lg px-2 py-1 text-center font-bold text-gray-900 text-xs focus:bg-white focus:border-blue-500 outline-none disabled:opacity-40 disabled:cursor-not-allowed transition">
+      <div class="flex items-center justify-end gap-2 mt-2">
+        <label class="flex items-center gap-1.5 text-[11px] text-gray-500">Cant.
+          <input type="text" inputmode="numeric" autocomplete="off" value="${valCantidad}" title="Cantidad contada en anaquel" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4)" class="input-cantidad-prod w-14 bg-white rounded-full shadow-sm border border-transparent px-2 py-1 text-center font-medium text-gray-900 text-xs focus:border-blue-500 outline-none disabled:opacity-50 disabled:shadow-none disabled:bg-transparent disabled:cursor-not-allowed transition">
         </label>
-        <button type="button" onclick="marcarNoEsta(this)" class="btn-no-esta text-[11px] font-semibold px-3 py-1 rounded-full border transition">No está</button>
+        <button type="button" onclick="marcarNoEsta(this)" class="btn-no-esta text-xs px-3 py-1 rounded-full border transition">No está</button>
       </div>`;
     actualizarPresenciaFila(row);
     tbody.appendChild(row);
@@ -783,8 +800,7 @@ function actualizarPresenciaFila(row) {
   if (tienePrecio) row.setAttribute("data-no-esta", "");
   const noEsta = row.getAttribute("data-no-esta") === "1";
   const boton = row.querySelector(".btn-no-esta");
-  boton.className = `btn-no-esta text-[11px] font-semibold px-3 py-1 rounded-full border transition ${noEsta ? "bg-amber-50 text-amber-700 border-amber-400" : "bg-white text-gray-400 border-transparent hover:border-gray-200"}`;
-  row.classList.toggle("bg-amber-50/40", noEsta);
+  boton.className = `btn-no-esta text-xs px-3 py-1 rounded-full border transition ${noEsta ? "bg-amber-50 text-amber-600 border-amber-300 font-medium" : "bg-white text-gray-700 border-transparent shadow-sm"}`;
   const cantidad = row.querySelector(".input-cantidad-prod");
   cantidad.disabled = !tienePrecio;
   if (!tienePrecio) cantidad.value = "";
@@ -872,7 +888,7 @@ async function guardarPreciosToma() {
   poblarFiltrosVisualizador(); // refresca Región/Estado/Ciudad de Analytics con los datos recién capturados
   renderCategoriasMenu();
   goToScreen(2);
-  mostrarToast(`«${sublineaSeleccionada}» queda en «Hoy»`, "Las pendientes siguen en «Nunca». Sigue con las demás sublíneas.");
+  mostrarToast(`«${nombreLegible(sublineaSeleccionada)}» queda en «Hoy»`, "Las pendientes siguen en «Nunca». Sigue con las demás sublíneas.");
 
   // Intenta subir a la nube en segundo plano; si falla (sin señal) queda
   // pendiente y se reintenta solo (ver sincronizarPendientes / evento 'online').
@@ -1068,8 +1084,8 @@ function renderGraficoTendencia(data) {
     data: {
       labels: etiquetasMeses,
       datasets: [
-        { label: 'Promedio SURA ($)', data: suraTrend, borderColor: 'rgb(79, 70, 229)', backgroundColor: 'rgba(79, 70, 229, 0.1)', tension: 0.3, fill: true },
-        { label: 'Promedio Competencia ($)', data: compTrend, borderColor: 'rgb(100, 116, 139)', backgroundColor: 'rgba(100, 116, 139, 0.1)', tension: 0.3, fill: true },
+        { label: 'Promedio SURA ($)', data: suraTrend, borderColor: 'rgb(43, 89, 224)', backgroundColor: 'rgba(43, 89, 224, 0.1)', tension: 0.3, fill: true },
+        { label: 'Promedio Competencia ($)', data: compTrend, borderColor: 'rgb(158, 156, 166)', backgroundColor: 'rgba(158, 156, 166, 0.1)', tension: 0.3, fill: true },
       ],
     },
     options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { mode: 'index', intersect: false } }, scales: { y: { beginAtZero: false, ticks: { callback: v => '$' + Number(v).toFixed(2) } } } },
@@ -1089,7 +1105,7 @@ function renderGraficoBarrasOrdenadas(data) {
   // tooltip siempre puede mostrar el nombre entero, grande y legible.
   chartBarrasInstancia = new Chart(ctx, {
     type: 'bar',
-    data: { labels: items.map(i => i.producto), datasets: [{ label: 'Precio Promedio ($)', data: items.map(i => i.avg.toFixed(2)), backgroundColor: 'rgba(37, 99, 235, 0.85)', borderRadius: 4 }] },
+    data: { labels: items.map(i => i.producto), datasets: [{ label: 'Precio Promedio ($)', data: items.map(i => i.avg.toFixed(2)), backgroundColor: 'rgba(43, 89, 224, 0.85)', borderRadius: 4 }] },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -1131,7 +1147,7 @@ function renderGraficoSuraVsComp(data) {
   });
   chartSuraVsCompInstancia = new Chart(ctx, {
     type: 'bar',
-    data: { labels: categorias, datasets: [{ label: 'SURA ($)', data: suraAvgs, backgroundColor: 'rgba(79, 70, 229, 0.85)' }, { label: 'COMPETENCIA ($)', data: compAvgs, backgroundColor: 'rgba(100, 116, 139, 0.75)' }] },
+    data: { labels: categorias, datasets: [{ label: 'SURA ($)', data: suraAvgs, backgroundColor: 'rgba(43, 89, 224, 0.85)' }, { label: 'COMPETENCIA ($)', data: compAvgs, backgroundColor: 'rgba(158, 156, 166, 0.75)' }] },
     options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: v => '$' + Number(v).toFixed(2) } } } },
   });
 }
@@ -1150,7 +1166,7 @@ function renderGraficoSuraVsCompSize(data) {
   });
   chartSuraVsCompSizeInstancia = new Chart(ctx, {
     type: 'bar',
-    data: { labels: sizes, datasets: [{ label: 'SURA ($)', data: suraAvgs, backgroundColor: 'rgba(37, 99, 235, 0.85)' }, { label: 'COMPETENCIA ($)', data: compAvgs, backgroundColor: 'rgba(100, 116, 139, 0.75)' }] },
+    data: { labels: sizes, datasets: [{ label: 'SURA ($)', data: suraAvgs, backgroundColor: 'rgba(43, 89, 224, 0.85)' }, { label: 'COMPETENCIA ($)', data: compAvgs, backgroundColor: 'rgba(158, 156, 166, 0.75)' }] },
     options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: v => '$' + Number(v).toFixed(2) } } } },
   });
 }

@@ -13,6 +13,26 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="DataPrice">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Paleta estilo CIMA: reemplaza los azules/ámbares/verdes de Tailwind en toda la app.
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Roboto', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+          colors: {
+            blue: { 50: '#eff2fb', 100: '#e0e7fb', 200: '#c4d1f7', 300: '#9db3f1', 400: '#6c8ce9', 500: '#4470e4', 600: '#2b59e0', 700: '#2148c0', 800: '#1d3c9a', 900: '#1b337a', 950: '#0e2142' },
+            amber: { 50: '#fdf3dd', 100: '#fcebc4', 200: '#f8dc9a', 300: '#f0c460', 400: '#e8b44d', 500: '#e0a93a', 600: '#c98a12', 700: '#a66d0c', 800: '#7f540c', 900: '#5f3f0b' },
+            emerald: { 50: '#e8f5ee', 100: '#d1ecdc', 200: '#a6d9bb', 300: '#74c497', 400: '#45ab70', 500: '#22a05a', 600: '#17994e', 700: '#127d40', 800: '#0f6334', 900: '#0c4f2a' },
+            gray: { 50: '#f4f2fa', 100: '#eceaf3', 200: '#e3e1ea', 300: '#d2d0da', 400: '#9e9ca6', 500: '#797880', 600: '#5c5b63', 700: '#45444b', 800: '#2c2b31', 900: '#111218' },
+            cima: { navy: '#0e2142', fondo: '#f4f2fa' },
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" onerror="this.onerror=null;document.write('<script src=\'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js\'><\/script>')"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" onerror="this.onerror=null;document.write('<script src=\'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js\'><\/script>')"></script>
@@ -311,40 +331,41 @@
     </div>
 
     <!-- ==================== PANTALLAS DE CAPTURA: PRICE CHECK (2) Y SUBLÍNEA (4) ==================== -->
-    <div id="screen-2" class="max-w-2xl mx-auto space-y-4 pb-6 hidden">
-      <div class="flex items-center gap-3">
-        <button onclick="cambiarCliente()" class="w-10 h-10 rounded-full hover:bg-white flex items-center justify-center text-gray-700 transition" title="Volver a clientes"><i class="fa-solid fa-arrow-left"></i></button>
-        <h2 class="text-xl font-bold text-gray-900">Price check</h2>
+    <div id="screen-2" class="-mx-4 -mt-4 sm:mx-auto sm:mt-0 sm:max-w-2xl pb-6 hidden">
+      <div class="bg-white border-b border-gray-100 sm:rounded-2xl sm:border-0 sm:shadow-sm px-3 py-2.5 flex items-center gap-3">
+        <button onclick="cambiarCliente()" class="w-10 h-10 rounded-full bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-900 transition" title="Volver a clientes"><i class="fa-solid fa-arrow-left"></i></button>
+        <h2 class="text-lg font-medium text-gray-900">Price check</h2>
       </div>
-      <div class="bg-white rounded-2xl border border-gray-200 p-4 flex items-center justify-between gap-3">
-        <div class="min-w-0">
-          <h3 id="pc-cliente-nombre" class="font-bold text-gray-900 leading-tight"></h3>
-          <p id="pc-cliente-info" class="text-xs text-gray-400 mt-0.5"></p>
+      <div class="px-4 sm:px-0 pt-4 space-y-4">
+        <div class="bg-white rounded-2xl shadow-sm px-4 py-3.5 flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <h3 id="pc-cliente-nombre" class="font-medium text-gray-900 leading-tight"></h3>
+            <p id="pc-cliente-info" class="text-xs text-gray-500 mt-1"></p>
+          </div>
+          <span class="flex-shrink-0 text-[11px] font-medium text-blue-500 bg-blue-50 px-2.5 py-1 rounded-full">En visita</span>
         </div>
-        <span class="flex-shrink-0 text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full">En visita</span>
+        <div class="flex items-center justify-between px-1 pt-1">
+          <span class="text-[11px] uppercase tracking-wider text-gray-500">Sublíneas</span>
+          <span id="pc-te-tocan" class="text-[11px] text-gray-500"></span>
+        </div>
+        <div id="container-categorias" class="space-y-4"></div>
+        <button onclick="terminarVisita()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3.5 rounded-2xl shadow-sm transition text-sm">Terminar visita</button>
       </div>
-      <div class="flex items-center justify-between px-1 pt-1">
-        <span class="text-[11px] font-bold uppercase tracking-wider text-gray-500">Sublíneas</span>
-        <span id="pc-te-tocan" class="text-[11px] text-gray-500"></span>
-      </div>
-      <div id="container-categorias" class="space-y-4"></div>
-      <button onclick="terminarVisita()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-sm transition text-sm">Terminar visita</button>
     </div>
 
-    <div id="screen-4" class="max-w-2xl mx-auto space-y-3 pb-28 hidden">
-      <div class="flex items-center gap-3">
-        <button onclick="goToScreen(2)" class="w-10 h-10 rounded-full hover:bg-white flex items-center justify-center text-gray-700 transition" title="Volver a Price check"><i class="fa-solid fa-arrow-left"></i></button>
-        <h2 id="titulo-sublinea-activa" class="text-xl font-bold text-gray-900"></h2>
+    <div id="screen-4" class="-mx-4 -mt-4 sm:mx-auto sm:mt-0 sm:max-w-2xl pb-28 hidden">
+      <div class="bg-white border-b border-gray-100 sm:rounded-2xl sm:border-0 sm:shadow-sm px-3 py-2.5 flex items-center gap-3">
+        <button onclick="goToScreen(2)" class="w-10 h-10 rounded-full bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-900 transition" title="Volver a Price check"><i class="fa-solid fa-arrow-left"></i></button>
+        <h2 id="titulo-sublinea-activa" class="text-lg font-medium text-gray-900 truncate"></h2>
       </div>
-      <p id="subtitulo-sublinea-activa" class="px-1 text-[11px] text-gray-500"></p>
-      <div class="relative">
-        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-        <input type="text" id="search-producto-input" onkeyup="filtrarTablaProductos()" placeholder="Buscar producto o marca..." class="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500">
+      <div class="px-4 sm:px-0 pt-3 space-y-2">
+        <p id="subtitulo-sublinea-activa" class="px-1 text-[11px] text-gray-500"></p>
+        <input type="text" id="search-producto-input" onkeyup="filtrarTablaProductos()" placeholder="Buscar producto o marca..." class="w-full px-4 py-3 text-sm bg-white rounded-2xl shadow-sm border border-transparent focus:outline-none focus:border-blue-400 placeholder:text-gray-400">
+        <div id="lista-productos-body" class="pt-1"></div>
       </div>
-      <div id="lista-productos-body" class="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 overflow-hidden"></div>
-      <div class="fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-gray-200 p-3">
+      <div class="fixed bottom-0 inset-x-0 z-30 bg-gray-50/95 backdrop-blur px-4 pt-2 pb-4">
         <div class="max-w-2xl mx-auto">
-          <button id="btn-guardar-productos" onclick="guardarPreciosToma()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-sm transition text-sm">Guardar productos</button>
+          <button id="btn-guardar-productos" onclick="guardarPreciosToma()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3.5 rounded-2xl shadow-md transition text-sm">Guardar productos</button>
         </div>
       </div>
     </div>
