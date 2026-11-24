@@ -792,14 +792,19 @@ function seleccionarSublinea(sub) {
       const presencia = existente && presenciaDeRegistro(existente) === "NO" ? "NO" : ""; // "Está" lo pone la cantidad
       const valCantidad = existente && existente.cantidad > 0 ? existente.cantidad : "";
       row.setAttribute("data-presencia", presencia);
+      row.setAttribute("data-unidad", existente && existente.unidadMedida ? existente.unidadMedida : ultimaUnidadInventario);
       row.innerHTML = `
       <div class="flex items-center gap-3">${htmlImagenYNombre(prod, slug)}
         <div class="relative w-28 flex-shrink-0">
           <input type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${valCantidad}" ${datosProducto(prod)} oninput="onCantidadInventario(this)" class="input-cantidad-inv w-full bg-white rounded-2xl shadow-sm border border-transparent pl-3.5 pr-11 py-3 text-right font-medium text-gray-900 text-base focus:border-blue-500 outline-none transition placeholder:text-gray-300">
-          <span class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-500 text-xs">und</span>
+          <span class="etiqueta-unidad pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-500 text-xs">und</span>
         </div>
       </div>
-      <div class="flex items-center justify-end gap-2 mt-2">
+      <div class="flex items-center justify-end gap-2 mt-2 flex-wrap">
+        <div class="mr-auto bg-white rounded-full shadow-sm p-0.5 flex text-xs">
+          <button type="button" onclick="cambiarUnidadInventario(this, 'UNIDADES')" class="btn-unidad-und px-3 py-1 rounded-full transition">Unidades</button>
+          <button type="button" onclick="cambiarUnidadInventario(this, 'BULTOS')" class="btn-unidad-bulto px-3 py-1 rounded-full transition">Bultos</button>
+        </div>
         <button type="button" onclick="marcarPresenciaInventario(this, 'SI')" class="btn-esta text-xs px-3 py-1 rounded-full border transition"><i class="fa-solid fa-check"></i> Está</button>
         <button type="button" onclick="marcarPresenciaInventario(this, 'NO')" class="btn-no-esta text-xs px-3 py-1 rounded-full border transition">No está</button>
       </div>`;
@@ -899,7 +904,23 @@ function pintarPresenciaInventario(row) {
   const esta = row.querySelector(".btn-esta");
   esta.className = `btn-esta text-xs px-3 py-1 rounded-full border transition ${presencia === "SI" ? "bg-emerald-50 text-emerald-700 border-emerald-400 font-medium" : "bg-white/60 text-gray-400 border-transparent"}`;
   esta.title = cantidad > 0 ? "" : "Escribe primero la cantidad contada";
+  const unidad = row.getAttribute("data-unidad") || "UNIDADES";
+  row.querySelector(".btn-unidad-und").className = `btn-unidad-und px-3 py-1 rounded-full transition ${unidad === "UNIDADES" ? "bg-blue-600 text-white font-medium" : "text-gray-600"}`;
+  row.querySelector(".btn-unidad-bulto").className = `btn-unidad-bulto px-3 py-1 rounded-full transition ${unidad === "BULTOS" ? "bg-blue-600 text-white font-medium" : "text-gray-600"}`;
+  row.querySelector(".etiqueta-unidad").textContent = unidad === "BULTOS" ? "bultos" : "und";
+  row.querySelector(".input-cantidad-inv").classList.toggle("pr-14", unidad === "BULTOS");
+  row.querySelector(".input-cantidad-inv").classList.toggle("pr-11", unidad !== "BULTOS");
   row.querySelector(".btn-no-esta").className = `btn-no-esta text-xs px-3 py-1 rounded-full border transition ${presencia === "NO" ? "bg-amber-50 text-amber-600 border-amber-300 font-medium" : "bg-white text-gray-700 border-transparent shadow-sm"}`;
+}
+
+// Unidades | Bultos: en qué se contó la cantidad. Las filas nuevas arrancan con la
+// última unidad elegida, para no tener que cambiarla producto por producto.
+let ultimaUnidadInventario = "UNIDADES";
+function cambiarUnidadInventario(boton, unidad) {
+  const row = boton.closest(".item-producto-row");
+  row.setAttribute("data-unidad", unidad);
+  ultimaUnidadInventario = unidad;
+  pintarPresenciaInventario(row);
 }
 
 function onCantidadInventario(input) {
@@ -957,7 +978,7 @@ function leerFilasDeToma() {
     return [...document.querySelectorAll(".input-cantidad-inv")].map(inp => {
       const row = inp.closest(".item-producto-row");
       const cantidad = parseInt(inp.value, 10) || 0;
-      return { inp, marcada: row.getAttribute("data-presencia") || "", cantidad };
+      return { inp, marcada: row.getAttribute("data-presencia") || "", cantidad, unidad: row.getAttribute("data-unidad") || "UNIDADES" };
     });
   }
   return [...document.querySelectorAll(".input-precio-prod")].map(inp => ({ inp, val: precioDeInput(inp) }));
@@ -1002,7 +1023,8 @@ async function guardarPreciosToma() {
       toma: inventario ? "INVENTARIO" : "PRECIO",
       precio: inventario ? 0 : f.val, // 0 = sin precio
       presencia: inventario ? (f.cantidad > 0 ? "SI" : "NO") : (f.val > 0 ? "SI" : "NO"),
-      cantidad: inventario ? f.cantidad : 0, // unidades contadas en anaquel (solo inventario SURA)
+      cantidad: inventario ? f.cantidad : 0, // cantidad contada en anaquel (solo inventario SURA)
+      ...(inventario ? { unidadMedida: f.unidad } : {}), // "UNIDADES" o "BULTOS"
       synced: false, // se marca true cuando llega a la nube (ver sincronizarPendientes)
     };
     registrosPreciosDB.push(registro);
@@ -1511,6 +1533,7 @@ async function exportarExcel() {
     ...columnasBase(r),
     "Presencia en Anaquel": presenciaDeRegistro(r) === "SI" ? "Está" : "No está",
     "Cantidad en Anaquel": r.cantidad > 0 ? r.cantidad : "",
+    "Unidad de Medida": r.cantidad > 0 ? (r.unidadMedida === "BULTOS" ? "Bultos" : "Unidades") : "",
   }));
   const wb = XLSX.utils.book_new();
   if (precios.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(precios), "Precios");
