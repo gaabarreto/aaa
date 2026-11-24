@@ -402,7 +402,6 @@ function goToScreen(screenId, opciones = {}) {
   }
   document.getElementById("modal-imagen-ampliada").classList.add("hidden");
   document.getElementById("toast").classList.add("hidden");
-  actualizarBarraVisita(screenId);
   ["login", 0, 1, 2, 4, 5, 6].forEach(id => document.getElementById(`screen-${id}`).classList.add("hidden"));
   document.getElementById(`screen-${screenId}`).classList.remove("hidden");
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -508,7 +507,6 @@ async function iniciarCaptura() {
     ciudad: document.getElementById("select-ciudad").value || "",
     fecha: document.getElementById("fecha-captura").value || new Date().toISOString().split('T')[0],
   };
-  visitaInicio = Date.now();
   renderCategoriasMenu();
   goToScreen(2);
 }
@@ -523,7 +521,6 @@ function cambiarCliente() {
   document.getElementById("select-estado").value = "";
   document.getElementById("select-ciudad").value = "";
   document.getElementById("dropdown-clientes").classList.add("hidden");
-  visitaInicio = null;
   goToScreen(1);
 }
 
@@ -810,25 +807,6 @@ function mostrarToast(titulo, subtitulo = "") {
   toast.classList.remove("hidden");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.add("hidden"), 3500);
-}
-
-/* Visita: barra azul "En visita: CLIENTE · mm:ss" mientras se toman precios. */
-let visitaInicio = null;
-let visitaTimer = null;
-function actualizarBarraVisita(screenId) {
-  const barra = document.getElementById("barra-visita");
-  const mostrar = visitaInicio && (screenId === 2 || screenId === 4);
-  barra.classList.toggle("hidden", !mostrar);
-  clearInterval(visitaTimer);
-  if (!mostrar) return;
-  document.getElementById("barra-visita-cliente").textContent = clienteActual.nombre;
-  const pintar = () => {
-    const seg = Math.floor((Date.now() - visitaInicio) / 1000);
-    const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60), s = seg % 60;
-    document.getElementById("barra-visita-tiempo").textContent = (h ? h + ":" + String(m).padStart(2, "0") : String(m).padStart(2, "0")) + ":" + String(s).padStart(2, "0");
-  };
-  pintar();
-  visitaTimer = setInterval(pintar, 1000);
 }
 
 async function terminarVisita() {
