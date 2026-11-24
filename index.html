@@ -344,6 +344,14 @@
           </div>
           <span class="flex-shrink-0 text-[11px] font-medium text-blue-500 bg-blue-50 px-2.5 py-1 rounded-full">En visita</span>
         </div>
+        <div>
+          <p class="px-1 pb-1.5 text-[11px] uppercase tracking-wider text-gray-500">Tipo de toma</p>
+          <div class="bg-white rounded-2xl shadow-sm p-1 flex gap-1">
+            <button type="button" id="tab-toma-precio" onclick="cambiarModoToma('PRECIO')" class="flex-1 py-2.5 rounded-xl text-sm font-medium transition">Precios</button>
+            <button type="button" id="tab-toma-inventario" onclick="cambiarModoToma('INVENTARIO')" class="flex-1 py-2.5 rounded-xl text-sm font-medium transition">Inventario SURA</button>
+          </div>
+          <p id="pc-ayuda-modo" class="px-1 pt-1.5 text-xs text-gray-500"></p>
+        </div>
         <div class="flex items-center justify-between px-1 pt-1">
           <span class="text-[11px] uppercase tracking-wider text-gray-500">Sublíneas</span>
           <span id="pc-te-tocan" class="text-[11px] text-gray-500"></span>

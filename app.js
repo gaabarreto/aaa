@@ -507,6 +507,7 @@ async function iniciarCaptura() {
     ciudad: document.getElementById("select-ciudad").value || "",
     fecha: document.getElementById("fecha-captura").value || new Date().toISOString().split('T')[0],
   };
+  modoToma = "PRECIO";
   renderCategoriasMenu();
   goToScreen(2);
 }
@@ -612,11 +613,30 @@ function nombreLegible(texto) {
    "Hoy" (ya se tomó en esta visita), "Hace N días" o "Nunca". */
 let priceCheckRefs = []; // índice -> {cat, sub}; evita meter nombres en los onclick
 
+/* Dos tomas separadas dentro de la misma visita:
+   - "PRECIO": todos los productos, solo precio (sin precio = no está).
+   - "INVENTARIO": solo productos SURA, Está / No está + cantidad contada.
+   Se guardan como registros distintos (campo "toma"), así una no pisa a la otra. */
+let modoToma = "PRECIO";
+const esRegistroInventario = (r) => r.toma === "INVENTARIO";
+
+function productosDelModo(cat, sub) {
+  const lista = productosParaToma(cat, sub);
+  return modoToma === "INVENTARIO" ? lista.filter(p => p.tipo === "SURA") : lista;
+}
+
+function cambiarModoToma(modo) {
+  modoToma = modo;
+  document.getElementById("toast").classList.add("hidden");
+  renderCategoriasMenu();
+}
+
 function estadoSublineaParaCliente(cat, sub) {
   const fechas = registrosPreciosDB
-    .filter(r => r.codCliente === clienteActual.cod && normTxt(r.categoria) === normTxt(cat) && normTxt(r.sublinea) === normTxt(sub))
+    .filter(r => r.codCliente === clienteActual.cod && esRegistroInventario(r) === (modoToma === "INVENTARIO")
+      && normTxt(r.categoria) === normTxt(cat) && normTxt(r.sublinea) === normTxt(sub))
     .map(r => r.fecha).filter(Boolean).sort();
-  if (!fechas.length) return { clave: "NUNCA", texto: "Nunca", clase: "text-amber-500" };  // ámbar CIMA
+  if (!fechas.length) return { clave: "NUNCA", texto: "Nunca", clase: "text-amber-500" };
   const ultima = fechas[fechas.length - 1];
   if (ultima === clienteActual.fecha) return { clave: "HOY", texto: "Hoy", clase: "text-emerald-600" };
   const dias = Math.round((new Date(clienteActual.fecha) - new Date(ultima)) / 86400000);
@@ -627,16 +647,26 @@ function estadoSublineaParaCliente(cat, sub) {
 function renderCategoriasMenu() {
   document.getElementById("pc-cliente-nombre").textContent = clienteActual.nombre;
   document.getElementById("pc-cliente-info").textContent = `${clienteActual.cod} · ${clienteActual.ciudad || clienteActual.region} · ${clienteActual.canal}`;
+  ["PRECIO", "INVENTARIO"].forEach(m => {
+    const tab = document.getElementById(`tab-toma-${m.toLowerCase()}`);
+    tab.className = `flex-1 py-2.5 rounded-xl text-sm font-medium transition ${modoToma === m ? "bg-blue-600 text-white shadow" : "text-gray-700 hover:bg-gray-50"}`;
+  });
+  document.getElementById("pc-ayuda-modo").textContent = modoToma === "INVENTARIO"
+    ? "Solo productos SURA: marca si está en el anaquel y cuántas unidades contaste."
+    : "Registra el precio de cada producto. Sin precio, el producto queda como «No está».";
   const container = document.getElementById("container-categorias");
   priceCheckRefs = [];
   let total = 0, hechas = 0;
   let html = "";
   categoriasParaToma().forEach(cat => {
-    const filas = sublineasParaToma(cat).map(sub => {
-      const estado = estadoSublineaParaCliente(cat, sub);
-      total++; if (estado.clave === "HOY") hechas++;
-      return { sub, estado, productos: productosParaToma(cat, sub).length };
-    });
+    const filas = sublineasParaToma(cat).map(sub => ({ sub, productos: productosDelModo(cat, sub).length }))
+      .filter(f => f.productos > 0) // en Inventario SURA se ocultan las sublíneas sin productos SURA
+      .map(f => {
+        const estado = estadoSublineaParaCliente(cat, f.sub);
+        total++; if (estado.clave === "HOY") hechas++;
+        return { ...f, estado };
+      });
+    if (!filas.length) return;
     // Las pendientes arriba; las ya tomadas hoy bajan al final del grupo.
     filas.sort((a, b) => (a.estado.clave === "HOY") - (b.estado.clave === "HOY"));
     html += `<div class="space-y-1.5">
@@ -646,12 +676,12 @@ function renderCategoriasMenu() {
         const i = priceCheckRefs.push({ cat, sub }) - 1;
         const hoy = estado.clave === "HOY";
         return `<button type="button" onclick="abrirSublineaPriceCheck(${i})" class="w-full text-left flex items-center justify-between gap-3 px-4 py-3.5 transition ${hoy ? "bg-emerald-50 ring-2 ring-inset ring-emerald-600 rounded-2xl" : "hover:bg-gray-50"}">
-          <span class="min-w-0"><span class="block font-medium text-[15px] text-gray-900">${escHtml(nombreLegible(sub))}</span><span class="block text-xs text-gray-500 mt-0.5">${productos} producto${productos === 1 ? "" : "s"}</span></span>
+          <span class="min-w-0"><span class="block font-medium text-[15px] text-gray-900">${escHtml(nombreLegible(sub))}</span><span class="block text-xs text-gray-500 mt-0.5">${productos} producto${productos === 1 ? "" : "s"}${modoToma === "INVENTARIO" ? " SURA" : ""}</span></span>
           <span class="flex items-center gap-1.5 flex-shrink-0 text-xs font-medium ${estado.clase}">${hoy ? '<i class="fa-solid fa-circle-check"></i>' : ""}${estado.texto}</span>
         </button>`;
       }).join("") + `</div></div>`;
   });
-  container.innerHTML = html || `<div class="bg-white rounded-2xl shadow-sm py-8 text-center text-xs text-gray-400 italic">No hay sublíneas activas para la toma.</div>`;
+  container.innerHTML = html || `<div class="bg-white rounded-2xl shadow-sm py-8 text-center text-xs text-gray-400 italic">${modoToma === "INVENTARIO" ? "No hay productos SURA activos para el inventario." : "No hay sublíneas activas para la toma."}</div>`;
   document.getElementById("pc-te-tocan").textContent = `Te tocan ${total - hechas} de ${total}`;
 }
 
@@ -662,46 +692,64 @@ function abrirSublineaPriceCheck(i) {
   seleccionarSublinea(r.sub);
 }
 
-function seleccionarSublinea(sub) {
-  sublineaSeleccionada = sub;
-  document.getElementById("titulo-sublinea-activa").textContent = nombreLegible(sublineaSeleccionada);
-  document.getElementById("subtitulo-sublinea-activa").textContent = `${clienteActual.nombre} · precios en dólares`;
-  document.getElementById("search-producto-input").value = "";
-  const productos = productosParaToma(categoriaSeleccionada, sublineaSeleccionada);
-  document.getElementById("btn-guardar-productos").textContent = `Guardar ${productos.length} producto${productos.length === 1 ? "" : "s"}`;
-  const tbody = document.getElementById("lista-productos-body");
-  tbody.innerHTML = "";
-  productos.forEach(prod => {
-    const existente = registrosPreciosDB.find(r => r.codCliente === clienteActual.cod && r.producto === prod.producto && r.fecha === clienteActual.fecha);
-    const valPrecio = existente && existente.precio > 0 ? existente.precio.toFixed(2) : "";
-    const valCantidad = existente && existente.precio > 0 && existente.cantidad > 0 ? existente.cantidad : "";
-    const marcadoNoEsta = existente && !(existente.precio > 0) && presenciaDeRegistro(existente) === "NO";
-    const isSura = prod.tipo === "SURA";
-    const slug = slugProducto(prod.producto);
-    const row = document.createElement("div");
-    row.className = "item-producto-row px-1 py-3 rounded-2xl transition";
-    row.setAttribute("data-search", `${prod.producto} ${prod.marca}`.toLowerCase());
-    row.setAttribute("data-no-esta", marcadoNoEsta ? "1" : "");
-    row.innerHTML = `
-      <div class="flex items-center gap-3">
+function htmlImagenYNombre(prod, slug) {
+  const isSura = prod.tipo === "SURA";
+  return `
         <img id="img-prod-${slug}" src="" alt="" onclick="mostrarImagenAmpliada(this.src)" class="w-14 h-14 rounded-2xl object-contain bg-white p-1 shadow-sm hidden flex-shrink-0 cursor-zoom-in">
         <div id="img-prod-${slug}-placeholder" class="w-14 h-14 rounded-2xl bg-white shadow-sm flex items-center justify-center text-gray-300 flex-shrink-0"><i class="fa-solid fa-image"></i></div>
         <div class="min-w-0 flex-1">
           <p class="font-medium text-gray-900 text-sm leading-snug">${escHtml(nombreLegible(prod.producto))}</p>
           <p class="text-xs text-gray-500 mt-1 flex items-center gap-1 flex-wrap">${isSura ? '<span class="text-[10px] font-bold text-blue-600 bg-blue-50 rounded px-1.5 py-0.5 mr-0.5">SURA</span>' : ""}<span>${escHtml(nombreLegible(prod.marca))}</span><span>·</span><span>${escHtml(nombreLegible(prod.size) || "-")}</span></p>
-        </div>
+        </div>`;
+}
+
+const datosProducto = (prod) => `data-producto="${escHtml(prod.producto)}" data-marca="${escHtml(prod.marca)}" data-tipo="${escHtml(prod.tipo)}" data-size="${escHtml(prod.size || '')}"`;
+
+function seleccionarSublinea(sub) {
+  sublineaSeleccionada = sub;
+  const inventario = modoToma === "INVENTARIO";
+  document.getElementById("titulo-sublinea-activa").textContent = nombreLegible(sublineaSeleccionada);
+  document.getElementById("subtitulo-sublinea-activa").textContent = inventario
+    ? `${clienteActual.nombre} · inventario en anaquel de productos SURA`
+    : `${clienteActual.nombre} · precios en dólares`;
+  document.getElementById("search-producto-input").value = "";
+  const productos = productosDelModo(categoriaSeleccionada, sublineaSeleccionada);
+  document.getElementById("btn-guardar-productos").textContent = `Guardar ${productos.length} producto${productos.length === 1 ? "" : "s"}`;
+  const tbody = document.getElementById("lista-productos-body");
+  tbody.innerHTML = "";
+  productos.forEach(prod => {
+    const existente = registrosPreciosDB.find(r => r.codCliente === clienteActual.cod && r.producto === prod.producto && r.fecha === clienteActual.fecha && esRegistroInventario(r) === inventario);
+    const slug = slugProducto(prod.producto);
+    const row = document.createElement("div");
+    row.className = "item-producto-row px-1 py-3 rounded-2xl transition";
+    row.setAttribute("data-search", `${prod.producto} ${prod.marca}`.toLowerCase());
+
+    if (!inventario) {
+      const valPrecio = existente && existente.precio > 0 ? existente.precio.toFixed(2) : "";
+      row.innerHTML = `
+      <div class="flex items-center gap-3">${htmlImagenYNombre(prod, slug)}
         <div class="relative w-28 flex-shrink-0">
           <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-gray-500 text-sm">$</span>
-          <input type="text" inputmode="numeric" autocomplete="off" placeholder="" value="${valPrecio}" data-producto="${prod.producto}" data-marca="${prod.marca}" data-tipo="${prod.tipo}" data-size="${prod.size || ''}" onkeydown="manejarTeclaPrecioATM(event)" onpaste="manejarPegadoPrecioATM(event)" class="input-precio-prod w-full bg-white rounded-2xl shadow-sm border border-transparent pl-7 pr-3.5 py-3 text-right font-medium text-gray-900 text-base focus:border-blue-500 outline-none transition">
+          <input type="text" inputmode="numeric" autocomplete="off" value="${valPrecio}" ${datosProducto(prod)} onkeydown="manejarTeclaPrecioATM(event)" onpaste="manejarPegadoPrecioATM(event)" class="input-precio-prod w-full bg-white rounded-2xl shadow-sm border border-transparent pl-7 pr-3.5 py-3 text-right font-medium text-gray-900 text-base focus:border-blue-500 outline-none transition">
+        </div>
+      </div>`;
+    } else {
+      const presencia = existente ? presenciaDeRegistro(existente) : "";
+      const valCantidad = existente && existente.cantidad > 0 ? existente.cantidad : "";
+      row.setAttribute("data-presencia", presencia);
+      row.innerHTML = `
+      <div class="flex items-center gap-3">${htmlImagenYNombre(prod, slug)}
+        <div class="relative w-28 flex-shrink-0">
+          <input type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${valCantidad}" ${datosProducto(prod)} oninput="onCantidadInventario(this)" class="input-cantidad-inv w-full bg-white rounded-2xl shadow-sm border border-transparent pl-3.5 pr-11 py-3 text-right font-medium text-gray-900 text-base focus:border-blue-500 outline-none transition placeholder:text-gray-300">
+          <span class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-500 text-xs">und</span>
         </div>
       </div>
       <div class="flex items-center justify-end gap-2 mt-2">
-        <label class="flex items-center gap-1.5 text-[11px] text-gray-500">Cant.
-          <input type="text" inputmode="numeric" autocomplete="off" value="${valCantidad}" title="Cantidad contada en anaquel" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4)" class="input-cantidad-prod w-14 bg-white rounded-full shadow-sm border border-transparent px-2 py-1 text-center font-medium text-gray-900 text-xs focus:border-blue-500 outline-none disabled:opacity-50 disabled:shadow-none disabled:bg-transparent disabled:cursor-not-allowed transition">
-        </label>
-        <button type="button" onclick="marcarNoEsta(this)" class="btn-no-esta text-xs px-3 py-1 rounded-full border transition">No está</button>
+        <button type="button" onclick="marcarPresenciaInventario(this, 'SI')" class="btn-esta text-xs px-3 py-1 rounded-full border transition"><i class="fa-solid fa-check"></i> Está</button>
+        <button type="button" onclick="marcarPresenciaInventario(this, 'NO')" class="btn-no-esta text-xs px-3 py-1 rounded-full border transition">No está</button>
       </div>`;
-    actualizarPresenciaFila(row);
+      pintarPresenciaInventario(row);
+    }
     tbody.appendChild(row);
     cargarImagenProductoEnFila(slug);
   });
@@ -752,16 +800,12 @@ function manejarTeclaPrecioATM(event) {
   event.preventDefault(); // el input nunca se edita "a mano": todo pasa por aquí
 
   if (tecla === "Backspace" || tecla === "Delete") {
-    const nuevosCentavos = Math.floor(obtenerCentavosDeInput(input) / 10);
-    input.value = formatearCentavos(nuevosCentavos);
-    actualizarPresenciaFila(input.closest(".item-producto-row"));
+    input.value = formatearCentavos(Math.floor(obtenerCentavosDeInput(input) / 10));
     return;
   }
 
   if (/^[0-9]$/.test(tecla)) {
-    const nuevosCentavos = limitarCentavos(obtenerCentavosDeInput(input) * 10 + Number(tecla));
-    input.value = formatearCentavos(nuevosCentavos);
-    actualizarPresenciaFila(input.closest(".item-producto-row"));
+    input.value = formatearCentavos(limitarCentavos(obtenerCentavosDeInput(input) * 10 + Number(tecla)));
   }
   // cualquier otra tecla (letras, símbolos) queda ignorada por el preventDefault de arriba
 }
@@ -774,14 +818,10 @@ function manejarPegadoPrecioATM(event) {
   let centavos = obtenerCentavosDeInput(event.target);
   for (const digito of soloDigitos) centavos = limitarCentavos(centavos * 10 + Number(digito));
   event.target.value = formatearCentavos(centavos);
-  actualizarPresenciaFila(event.target.closest(".item-producto-row"));
 }
 
-/* ----------------------- Inventario en anaquel: Está / No está -----------------------
-   La presencia sale del precio: con precio el producto "Está", sin precio "No está".
-   La cantidad contada solo se puede escribir cuando el producto tiene precio. */
 function presenciaDeRegistro(r) {
-  // Registros anteriores a esta función no tienen el campo: si tenían precio, el producto estaba.
+  // Registros sin el campo (anteriores a esta función): si tenían precio, el producto estaba.
   return r.presencia || (r.precio > 0 ? "SI" : "NO");
 }
 
@@ -791,27 +831,28 @@ function precioDeInput(input) {
   return !isNaN(leido) && leido > 0 ? leido : 0;
 }
 
-// Estado de la fila: con precio "está"; tocar "No está" la marca en amarillo
-// (y borra precio y cantidad). Escribir un precio quita la marca "No está".
-function actualizarPresenciaFila(row) {
-  if (!row) return;
-  const precioInput = row.querySelector(".input-precio-prod");
-  const tienePrecio = precioDeInput(precioInput) > 0;
-  if (tienePrecio) row.setAttribute("data-no-esta", "");
-  const noEsta = row.getAttribute("data-no-esta") === "1";
-  const boton = row.querySelector(".btn-no-esta");
-  boton.className = `btn-no-esta text-xs px-3 py-1 rounded-full border transition ${noEsta ? "bg-amber-50 text-amber-600 border-amber-300 font-medium" : "bg-white text-gray-700 border-transparent shadow-sm"}`;
-  const cantidad = row.querySelector(".input-cantidad-prod");
-  cantidad.disabled = !tienePrecio;
-  if (!tienePrecio) cantidad.value = "";
+/* ----------------------- Inventario SURA: Está / No está + cantidad -----------------------
+   Escribir una cantidad marca "Está"; marcar "No está" borra la cantidad.
+   "Está" sin cantidad se permite (está en el anaquel pero no se contó). */
+function pintarPresenciaInventario(row) {
+  const presencia = row.getAttribute("data-presencia") || "";
+  row.querySelector(".btn-esta").className = `btn-esta text-xs px-3 py-1 rounded-full border transition ${presencia === "SI" ? "bg-emerald-50 text-emerald-700 border-emerald-400 font-medium" : "bg-white text-gray-700 border-transparent shadow-sm"}`;
+  row.querySelector(".btn-no-esta").className = `btn-no-esta text-xs px-3 py-1 rounded-full border transition ${presencia === "NO" ? "bg-amber-50 text-amber-600 border-amber-300 font-medium" : "bg-white text-gray-700 border-transparent shadow-sm"}`;
 }
 
-function marcarNoEsta(boton) {
+function onCantidadInventario(input) {
+  input.value = input.value.replace(/[^0-9]/g, "").slice(0, 4);
+  const row = input.closest(".item-producto-row");
+  if (parseInt(input.value, 10) > 0) row.setAttribute("data-presencia", "SI");
+  pintarPresenciaInventario(row);
+}
+
+function marcarPresenciaInventario(boton, presencia) {
   const row = boton.closest(".item-producto-row");
-  const marcar = row.getAttribute("data-no-esta") !== "1";
-  row.setAttribute("data-no-esta", marcar ? "1" : "");
-  if (marcar) row.querySelector(".input-precio-prod").value = "";
-  actualizarPresenciaFila(row);
+  const nueva = row.getAttribute("data-presencia") === presencia ? "" : presencia; // tocar de nuevo desmarca
+  row.setAttribute("data-presencia", nueva);
+  if (nueva === "NO") row.querySelector(".input-cantidad-inv").value = "";
+  pintarPresenciaInventario(row);
 }
 
 /* Aviso flotante abajo (estilo CIMA), se cierra solo. */
@@ -826,58 +867,67 @@ function mostrarToast(titulo, subtitulo = "") {
 }
 
 async function terminarVisita() {
-  const texto = document.getElementById("pc-te-tocan").textContent;
-  const ok = await mostrarConfirmacion(`${clienteActual.nombre}\n${texto.replace("Te tocan", "Quedan pendientes")} sublíneas.`, { titulo: "¿Terminar la visita?", textoConfirmar: "Terminar visita", variante: "info" });
+  // Calcula lo pendiente de cada toma y vuelve a dejar la pestaña donde estaba.
+  const modoActual = modoToma;
+  const pendientes = {};
+  ["PRECIO", "INVENTARIO"].forEach(m => { modoToma = m; renderCategoriasMenu(); pendientes[m] = document.getElementById("pc-te-tocan").textContent.replace("Te tocan ", ""); });
+  modoToma = modoActual; renderCategoriasMenu();
+  const ok = await mostrarConfirmacion(`${clienteActual.nombre}\nPrecios: ${pendientes.PRECIO} sublíneas pendientes.\nInventario SURA: ${pendientes.INVENTARIO} sublíneas pendientes.`, { titulo: "¿Terminar la visita?", textoConfirmar: "Terminar visita", variante: "info" });
   if (ok) cambiarCliente();
 }
 
-async function guardarPreciosToma() {
-  const inputs = document.querySelectorAll(".input-precio-prod");
-
-  // Primera pasada: solo lee los valores válidos, sin tocar registrosPreciosDB
-  // todavía (así un "Cancelar" en la confirmación no deja cambios a medias).
-  // Se guardan TODOS los productos de la sublínea: con precio "Está", sin precio "No está".
-  const candidatos = [];
-  inputs.forEach(inp => {
-    const val = precioDeInput(inp);
-    const cantidad = val > 0 ? (parseInt(inp.closest(".item-producto-row").querySelector(".input-cantidad-prod").value, 10) || 0) : 0;
-    candidatos.push({
-      prodNombre: inp.getAttribute("data-producto"),
-      marca: inp.getAttribute("data-marca"),
-      tipo: inp.getAttribute("data-tipo"),
-      size: inp.getAttribute("data-size") || "",
-      val,
-      cantidad,
-      presencia: val > 0 ? "SI" : "NO",
+// Lee la pantalla de la sublínea según el modo y arma un registro por producto.
+function leerFilasDeToma() {
+  if (modoToma === "INVENTARIO") {
+    return [...document.querySelectorAll(".input-cantidad-inv")].map(inp => {
+      const row = inp.closest(".item-producto-row");
+      const cantidad = parseInt(inp.value, 10) || 0;
+      return { inp, marcada: row.getAttribute("data-presencia") || "", cantidad };
     });
-  });
-  if (candidatos.length === 0) return;
-  // Igual que en CIMA: cada producto debería tener precio o «No está». Los que
-  // quedaron vacíos se guardan como «No está», avisando antes.
-  const sinMarcar = [...inputs].filter(inp => precioDeInput(inp) === 0 && inp.closest(".item-producto-row").getAttribute("data-no-esta") !== "1").length;
-  if (sinMarcar > 0) {
-    const continuar = await mostrarConfirmacion(`${sinMarcar} producto${sinMarcar === 1 ? "" : "s"} no tiene${sinMarcar === 1 ? "" : "n"} precio ni «No está». Se guardarán como «No está» en el anaquel. ¿Deseas continuar?`, { titulo: "Productos sin precio", textoConfirmar: "Sí, guardar" });
-    if (!continuar) return;
   }
+  return [...document.querySelectorAll(".input-precio-prod")].map(inp => ({ inp, val: precioDeInput(inp) }));
+}
 
-  const hayPrecioAlto = candidatos.some(c => c.val > PRECIO_ALERTA_CENTAVOS / 100);
-  if (hayPrecioAlto) {
-    const continuar = await mostrarConfirmacion("La tabla presenta valores mayores a 8.00$, ¿Estas Seguro que Deseas Guardar?", { titulo: "Precio elevado", textoConfirmar: "Sí, guardar" });
-    if (!continuar) return;
+async function guardarPreciosToma() {
+  const inventario = modoToma === "INVENTARIO";
+  const filas = leerFilasDeToma();
+  if (!filas.length) return;
+
+  // Primera pasada: solo valida y confirma, sin tocar registrosPreciosDB todavía
+  // (así un "Cancelar" en la confirmación no deja cambios a medias).
+  if (inventario) {
+    const sinMarcar = filas.filter(f => !f.marcada && f.cantidad === 0).length;
+    if (sinMarcar > 0) {
+      const continuar = await mostrarConfirmacion(`${sinMarcar} producto${sinMarcar === 1 ? "" : "s"} SURA sin marcar. Se guardará${sinMarcar === 1 ? "" : "n"} como «No está» en el anaquel. ¿Deseas continuar?`, { titulo: "Productos sin marcar", textoConfirmar: "Sí, guardar" });
+      if (!continuar) return;
+    }
+  } else {
+    if (!filas.some(f => f.val > 0)) {
+      const continuar = await mostrarConfirmacion("Ningún producto tiene precio: se guardarán todos como «No está» en el anaquel. ¿Deseas continuar?", { titulo: "Sin precios", textoConfirmar: "Sí, guardar" });
+      if (!continuar) return;
+    }
+    if (filas.some(f => f.val > PRECIO_ALERTA_CENTAVOS / 100)) {
+      const continuar = await mostrarConfirmacion("La tabla presenta valores mayores a 8.00$, ¿Estas Seguro que Deseas Guardar?", { titulo: "Precio elevado", textoConfirmar: "Sí, guardar" });
+      if (!continuar) return;
+    }
   }
 
   const nuevosRegistros = [];
-  candidatos.forEach(({ prodNombre, marca, tipo, size, val, cantidad, presencia }) => {
-    registrosPreciosDB = registrosPreciosDB.filter(r => !(r.codCliente === clienteActual.cod && r.producto === prodNombre && r.fecha === clienteActual.fecha));
+  filas.forEach(f => {
+    const prodNombre = f.inp.getAttribute("data-producto");
+    // Solo reemplaza el registro del MISMO tipo de toma (el precio no pisa el inventario ni al revés).
+    registrosPreciosDB = registrosPreciosDB.filter(r => !(r.codCliente === clienteActual.cod && r.producto === prodNombre && r.fecha === clienteActual.fecha && esRegistroInventario(r) === inventario));
     const registro = {
       id: Date.now() + Math.floor(Math.random() * 1000),
       fecha: clienteActual.fecha, codCliente: clienteActual.cod, nombreCliente: clienteActual.nombre,
       rutaAsesor: asesorInfo.codigo || "",
       canal: clienteActual.canal, region: clienteActual.region, estado: clienteActual.estado, ciudad: clienteActual.ciudad,
       categoria: categoriaSeleccionada, sublinea: sublineaSeleccionada,
-      producto: prodNombre, marca: marca, size: size, tipo: tipo, precio: val, // 0 = sin precio (solo inventario)
-      presencia, // "SI" = está en el anaquel (tiene precio), "NO" = no está
-      cantidad, // unidades contadas en el anaquel (0 = no se contó o no está)
+      producto: prodNombre, marca: f.inp.getAttribute("data-marca"), size: f.inp.getAttribute("data-size") || "", tipo: f.inp.getAttribute("data-tipo"),
+      toma: inventario ? "INVENTARIO" : "PRECIO",
+      precio: inventario ? 0 : f.val, // 0 = sin precio
+      presencia: inventario ? (f.cantidad > 0 ? "SI" : (f.marcada || "NO")) : (f.val > 0 ? "SI" : "NO"),
+      cantidad: inventario ? f.cantidad : 0, // unidades contadas en anaquel (solo inventario SURA)
       synced: false, // se marca true cuando llega a la nube (ver sincronizarPendientes)
     };
     registrosPreciosDB.push(registro);
@@ -888,7 +938,7 @@ async function guardarPreciosToma() {
   poblarFiltrosVisualizador(); // refresca Región/Estado/Ciudad de Analytics con los datos recién capturados
   renderCategoriasMenu();
   goToScreen(2);
-  mostrarToast(`«${nombreLegible(sublineaSeleccionada)}» queda en «Hoy»`, "Las pendientes siguen en «Nunca». Sigue con las demás sublíneas.");
+  mostrarToast(`«${nombreLegible(sublineaSeleccionada)}» queda en «Hoy»`, `${inventario ? "Inventario SURA" : "Precios"}: las pendientes siguen en «Nunca».`);
 
   // Intenta subir a la nube en segundo plano; si falla (sin señal) queda
   // pendiente y se reintenta solo (ver sincronizarPendientes / evento 'online').
@@ -1004,7 +1054,7 @@ function aplicarFiltrosDashboard() { actualizarVisualizadorAnalytics(); }
 
 function actualizarVisualizadorAnalytics() {
   // Los registros de solo inventario (sin precio) no entran en promedios, mínimos ni gráficos.
-  const dataFiltrada = obtenerDataFiltrada().filter(r => r.precio > 0);
+  const dataFiltrada = obtenerDataFiltrada().filter(r => r.precio > 0 && !esRegistroInventario(r));
   if (dataFiltrada.length === 0) {
     ["min", "max", "avg", "sura-avg", "comp-avg"].forEach(id => {
       const el = document.getElementById(`kpi-${id}-precio`) || document.getElementById(`kpi-${id}`);
@@ -1370,17 +1420,26 @@ async function exportarExcel() {
   // Registros antiguos (capturados antes de guardar "size" por registro) recurren
   // al maestro de productos actual como respaldo para no dejar la columna vacía.
   const sizePorProducto = new Map(MAESTRO_PRODUCTOS.map(p => [p.producto, p.size]));
-  const dataExcel = dataFiltrada.map(r => ({
+  const columnasBase = (r) => ({
     "Fecha": r.fecha, "Cód. Cliente": r.codCliente, "Cliente": r.nombreCliente, "Ruta Asesor": r.rutaAsesor || "",
     "Canal": r.canal, "Región": r.region, "Estado": r.estado, "Ciudad": r.ciudad,
     "Categoría": r.categoria, "Sublínea": r.sublinea, "Producto": r.producto, "Marca": r.marca,
     "SizeUnificado": r.size || sizePorProducto.get(r.producto) || "",
-    "Tipo": r.tipo, "Precio ($)": r.precio > 0 ? r.precio : "",
+    "Tipo": r.tipo,
+  });
+  const precios = dataFiltrada.filter(r => !esRegistroInventario(r)).map(r => ({
+    ...columnasBase(r),
+    "Precio ($)": r.precio > 0 ? r.precio : "",
+    "Presencia en Anaquel": presenciaDeRegistro(r) === "SI" ? "Está" : "No está",
+  }));
+  const inventario = dataFiltrada.filter(esRegistroInventario).map(r => ({
+    ...columnasBase(r),
     "Presencia en Anaquel": presenciaDeRegistro(r) === "SI" ? "Está" : "No está",
     "Cantidad en Anaquel": r.cantidad > 0 ? r.cantidad : "",
   }));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dataExcel), "BD_Precios");
+  if (precios.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(precios), "Precios");
+  if (inventario.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventario), "Inventario SURA");
   XLSX.writeFile(wb, `DataPrice_${new Date().toISOString().split('T')[0]}.xlsx`);
 }
 
@@ -1433,7 +1492,7 @@ async function sincronizarPendientes() {
 function deduplicarRegistros(registros) {
   const porClave = new Map();
   registros.forEach(r => {
-    const clave = `${r.codCliente}|${r.producto}|${r.fecha}`;
+    const clave = `${r.codCliente}|${r.producto}|${r.fecha}|${esRegistroInventario(r) ? "INV" : "PRECIO"}`;
     const actual = porClave.get(clave);
     if (!actual || Number(r.id) > Number(actual.id)) porClave.set(clave, r);
   });
