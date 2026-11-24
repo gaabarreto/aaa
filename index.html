@@ -363,7 +363,7 @@
           <span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-3 py-1 rounded-full flex items-center space-x-1"><i class="fa-solid fa-barcode text-xs"></i><span id="count-productos-badge">0 Productos</span></span>
         </div>
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-          <div><h2 id="titulo-sublinea-activa" class="text-xl font-extrabold text-gray-900"></h2><p class="text-xs text-gray-500">Marca si cada producto está o no está en el anaquel e ingresa su precio ($ USD). Al escribir un precio se marca "Está" solo.</p></div>
+          <div><h2 id="titulo-sublinea-activa" class="text-xl font-extrabold text-gray-900"></h2><p class="text-xs text-gray-500">Ingresa el precio ($ USD) y la cantidad contada en anaquel. Con precio el producto queda como "Está"; sin precio, "No está".</p></div>
         </div>
       </div>
       <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -375,7 +375,7 @@
         </div>
         <div class="hidden sm:flex bg-slate-100 border-b border-gray-200 text-[11px] font-black uppercase tracking-wider text-slate-600 py-2.5 px-4">
           <span class="flex-1">Producto (Maestro)</span>
-          <span class="flex-shrink-0 text-right">Anaquel · Precio ($ USD)</span>
+          <span class="flex-shrink-0 flex items-center gap-2 text-center"><span class="w-20">Anaquel</span><span class="w-20">Cantidad</span><span class="w-32 text-right">Precio ($ USD)</span></span>
         </div>
         <div id="lista-productos-body" class="divide-y divide-gray-100 custom-scrollbar"></div>
         <div class="p-4 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-3">

@@ -645,7 +645,7 @@ function seleccionarSublinea(sub) {
   productos.forEach(prod => {
     const existente = registrosPreciosDB.find(r => r.codCliente === clienteActual.cod && r.producto === prod.producto && r.fecha === clienteActual.fecha);
     const valPrecio = existente && existente.precio > 0 ? existente.precio.toFixed(2) : "";
-    const presencia = existente ? presenciaDeRegistro(existente) : "";
+    const valCantidad = existente && existente.precio > 0 && existente.cantidad > 0 ? existente.cantidad : "";
     const isSura = prod.tipo === "SURA";
     const slug = slugProducto(prod.producto);
     // Tarjeta (no <tr>): en pantallas chicas queda todo apilado verticalmente
@@ -665,16 +665,14 @@ function seleccionarSublinea(sub) {
         </div>
       </div>
       <div class="w-full sm:w-auto flex items-center gap-2 flex-shrink-0">
-        <div class="flex rounded-lg border border-gray-300 overflow-hidden flex-shrink-0 text-[11px] font-bold">
-          <button type="button" onclick="marcarPresencia(this, 'SI')" class="btn-presencia-si px-2.5 py-2.5 sm:py-1.5 transition"><i class="fa-solid fa-check"></i> Está</button>
-          <button type="button" onclick="marcarPresencia(this, 'NO')" class="btn-presencia-no px-2.5 py-2.5 sm:py-1.5 border-l border-gray-300 transition"><i class="fa-solid fa-xmark"></i> No está</button>
-        </div>
+        <span class="etiqueta-presencia flex-shrink-0 w-20 text-center rounded-lg py-2.5 sm:py-1.5 text-[11px] font-bold border"></span>
+        <input type="text" inputmode="numeric" autocomplete="off" placeholder="Cant." value="${valCantidad}" title="Cantidad contada en anaquel" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4)" class="input-cantidad-prod w-16 sm:w-20 flex-shrink-0 border border-gray-300 rounded-lg px-2 py-2.5 sm:py-1.5 text-center font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm sm:text-xs disabled:bg-gray-100 disabled:text-gray-300 disabled:cursor-not-allowed">
         <div class="relative rounded-lg shadow-sm flex-1 sm:flex-none sm:w-32">
           <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><span class="text-gray-400 font-bold text-sm">$</span></div>
           <input type="text" inputmode="numeric" autocomplete="off" placeholder="0.00" value="${valPrecio}" data-producto="${prod.producto}" data-marca="${prod.marca}" data-tipo="${prod.tipo}" data-size="${prod.size || ''}" onkeydown="manejarTeclaPrecioATM(event)" onpaste="manejarPegadoPrecioATM(event)" class="input-precio-prod w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2.5 sm:py-1.5 text-right font-extrabold text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm sm:text-xs disabled:bg-gray-100 disabled:text-gray-300 disabled:cursor-not-allowed">
         </div>
       </div>`;
-    aplicarPresenciaEnFila(row, presencia);
+    actualizarPresenciaFila(row);
     tbody.appendChild(row);
     cargarImagenProductoEnFila(slug);
   });
@@ -727,13 +725,14 @@ function manejarTeclaPrecioATM(event) {
   if (tecla === "Backspace" || tecla === "Delete") {
     const nuevosCentavos = Math.floor(obtenerCentavosDeInput(input) / 10);
     input.value = formatearCentavos(nuevosCentavos);
+    actualizarPresenciaFila(input.closest(".item-producto-row"));
     return;
   }
 
   if (/^[0-9]$/.test(tecla)) {
     const nuevosCentavos = limitarCentavos(obtenerCentavosDeInput(input) * 10 + Number(tecla));
     input.value = formatearCentavos(nuevosCentavos);
-    if (nuevosCentavos > 0) aplicarPresenciaEnFila(input.closest(".item-producto-row"), "SI");
+    actualizarPresenciaFila(input.closest(".item-producto-row"));
   }
   // cualquier otra tecla (letras, símbolos) queda ignorada por el preventDefault de arriba
 }
@@ -746,33 +745,32 @@ function manejarPegadoPrecioATM(event) {
   let centavos = obtenerCentavosDeInput(event.target);
   for (const digito of soloDigitos) centavos = limitarCentavos(centavos * 10 + Number(digito));
   event.target.value = formatearCentavos(centavos);
-  if (centavos > 0) aplicarPresenciaEnFila(event.target.closest(".item-producto-row"), "SI");
+  actualizarPresenciaFila(event.target.closest(".item-producto-row"));
 }
 
 /* ----------------------- Inventario en anaquel: Está / No está -----------------------
-   Cada fila guarda su estado en data-presencia ("SI", "NO" o "" sin marcar).
-   Escribir un precio marca "Está" solo; marcar "No está" vacía y bloquea el precio. */
+   La presencia sale del precio: con precio el producto "Está", sin precio "No está".
+   La cantidad contada solo se puede escribir cuando el producto tiene precio. */
 function presenciaDeRegistro(r) {
   // Registros anteriores a esta función no tienen el campo: si tenían precio, el producto estaba.
-  return r.presencia || (r.precio > 0 ? "SI" : "");
+  return r.presencia || (r.precio > 0 ? "SI" : "NO");
 }
 
-function aplicarPresenciaEnFila(row, presencia) {
+function precioDeInput(input) {
+  // Acepta tanto "5.50" como "5,50" (teclado numérico en locale es-VE usa coma)
+  const leido = parseFloat((input.value || "").toString().replace(",", "."));
+  return !isNaN(leido) && leido > 0 ? leido : 0;
+}
+
+function actualizarPresenciaFila(row) {
   if (!row) return;
-  row.setAttribute("data-presencia", presencia);
-  const si = row.querySelector(".btn-presencia-si");
-  const no = row.querySelector(".btn-presencia-no");
-  const input = row.querySelector(".input-precio-prod");
-  si.className = `btn-presencia-si px-2.5 py-2.5 sm:py-1.5 transition ${presencia === "SI" ? "bg-emerald-600 text-white" : "bg-white text-gray-500 hover:bg-emerald-50"}`;
-  no.className = `btn-presencia-no px-2.5 py-2.5 sm:py-1.5 border-l border-gray-300 transition ${presencia === "NO" ? "bg-rose-600 text-white" : "bg-white text-gray-500 hover:bg-rose-50"}`;
-  input.disabled = presencia === "NO";
-  if (presencia === "NO") input.value = "";
-}
-
-function marcarPresencia(boton, presencia) {
-  const row = boton.closest(".item-producto-row");
-  // Tocar de nuevo el botón activo lo desmarca.
-  aplicarPresenciaEnFila(row, row.getAttribute("data-presencia") === presencia ? "" : presencia);
+  const esta = precioDeInput(row.querySelector(".input-precio-prod")) > 0;
+  const etiqueta = row.querySelector(".etiqueta-presencia");
+  etiqueta.innerHTML = esta ? '<i class="fa-solid fa-check"></i> Está' : '<i class="fa-solid fa-xmark"></i> No está';
+  etiqueta.className = `etiqueta-presencia flex-shrink-0 w-20 text-center rounded-lg py-2.5 sm:py-1.5 text-[11px] font-bold border ${esta ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-50 text-gray-400 border-gray-200"}`;
+  const cantidad = row.querySelector(".input-cantidad-prod");
+  cantidad.disabled = !esta;
+  if (!esta) cantidad.value = "";
 }
 
 async function guardarPreciosToma() {
@@ -780,24 +778,26 @@ async function guardarPreciosToma() {
 
   // Primera pasada: solo lee los valores válidos, sin tocar registrosPreciosDB
   // todavía (así un "Cancelar" en la confirmación no deja cambios a medias).
+  // Se guardan TODOS los productos de la sublínea: con precio "Está", sin precio "No está".
   const candidatos = [];
   inputs.forEach(inp => {
-    // Acepta tanto "5.50" como "5,50" (teclado numérico en locale es-VE usa coma)
-    const leido = parseFloat((inp.value || "").toString().replace(",", "."));
-    const val = !isNaN(leido) && leido > 0 ? leido : 0;
-    const marcada = inp.closest(".item-producto-row").getAttribute("data-presencia") || "";
-    const presencia = val > 0 ? "SI" : marcada;
-    if (!presencia) return; // ni precio ni presencia: no se guarda nada de este producto
+    const val = precioDeInput(inp);
+    const cantidad = val > 0 ? (parseInt(inp.closest(".item-producto-row").querySelector(".input-cantidad-prod").value, 10) || 0) : 0;
     candidatos.push({
       prodNombre: inp.getAttribute("data-producto"),
       marca: inp.getAttribute("data-marca"),
       tipo: inp.getAttribute("data-tipo"),
       size: inp.getAttribute("data-size") || "",
       val,
-      presencia,
+      cantidad,
+      presencia: val > 0 ? "SI" : "NO",
     });
   });
-  if (candidatos.length === 0) { await mostrarAlerta("Ingresa al menos un precio o marca si el producto está o no está en el anaquel.", "advertencia"); return; }
+  if (candidatos.length === 0) return;
+  if (!candidatos.some(c => c.val > 0)) {
+    const continuar = await mostrarConfirmacion("Ningún producto tiene precio: se guardarán todos como \"No está\" en el anaquel. ¿Deseas continuar?", { titulo: "Sin precios", textoConfirmar: "Sí, guardar" });
+    if (!continuar) return;
+  }
 
   const hayPrecioAlto = candidatos.some(c => c.val > PRECIO_ALERTA_CENTAVOS / 100);
   if (hayPrecioAlto) {
@@ -806,7 +806,7 @@ async function guardarPreciosToma() {
   }
 
   const nuevosRegistros = [];
-  candidatos.forEach(({ prodNombre, marca, tipo, size, val, presencia }) => {
+  candidatos.forEach(({ prodNombre, marca, tipo, size, val, cantidad, presencia }) => {
     registrosPreciosDB = registrosPreciosDB.filter(r => !(r.codCliente === clienteActual.cod && r.producto === prodNombre && r.fecha === clienteActual.fecha));
     const registro = {
       id: Date.now() + Math.floor(Math.random() * 1000),
@@ -815,7 +815,8 @@ async function guardarPreciosToma() {
       canal: clienteActual.canal, region: clienteActual.region, estado: clienteActual.estado, ciudad: clienteActual.ciudad,
       categoria: categoriaSeleccionada, sublinea: sublineaSeleccionada,
       producto: prodNombre, marca: marca, size: size, tipo: tipo, precio: val, // 0 = sin precio (solo inventario)
-      presencia, // "SI" = está en el anaquel, "NO" = no está
+      presencia, // "SI" = está en el anaquel (tiene precio), "NO" = no está
+      cantidad, // unidades contadas en el anaquel (0 = no se contó o no está)
       synced: false, // se marca true cuando llega a la nube (ver sincronizarPendientes)
     };
     registrosPreciosDB.push(registro);
@@ -1312,7 +1313,8 @@ async function exportarExcel() {
     "Categoría": r.categoria, "Sublínea": r.sublinea, "Producto": r.producto, "Marca": r.marca,
     "SizeUnificado": r.size || sizePorProducto.get(r.producto) || "",
     "Tipo": r.tipo, "Precio ($)": r.precio > 0 ? r.precio : "",
-    "Presencia en Anaquel": { SI: "Está", NO: "No está" }[presenciaDeRegistro(r)] || "",
+    "Presencia en Anaquel": presenciaDeRegistro(r) === "SI" ? "Está" : "No está",
+    "Cantidad en Anaquel": r.cantidad > 0 ? r.cantidad : "",
   }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dataExcel), "BD_Precios");
