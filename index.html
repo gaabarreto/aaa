@@ -352,8 +352,13 @@
           </div>
           <p id="pc-ayuda-modo" class="px-1 pt-1.5 text-xs text-gray-500"></p>
         </div>
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+          <input type="text" id="pc-buscar" oninput="renderCategoriasMenu()" autocomplete="off" placeholder="Buscar producto, marca o ID..." class="w-full pl-10 pr-10 py-3 text-sm bg-white rounded-2xl shadow-sm border border-transparent focus:outline-none focus:border-blue-400 placeholder:text-gray-400">
+          <button type="button" id="pc-buscar-limpiar" onclick="limpiarBusquedaPriceCheck()" class="hidden absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full text-gray-400 hover:bg-gray-50 hover:text-gray-700" title="Limpiar búsqueda"><i class="fa-solid fa-xmark"></i></button>
+        </div>
         <div class="flex items-center justify-between px-1 pt-1">
-          <span class="text-[11px] uppercase tracking-wider text-gray-500">Sublíneas</span>
+          <span id="pc-titulo-lista" class="text-[11px] uppercase tracking-wider text-gray-500">Sublíneas</span>
           <span id="pc-te-tocan" class="text-[11px] text-gray-500"></span>
         </div>
         <div id="container-categorias" class="space-y-4"></div>

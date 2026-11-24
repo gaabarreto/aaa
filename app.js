@@ -508,6 +508,7 @@ async function iniciarCaptura() {
     fecha: document.getElementById("fecha-captura").value || new Date().toISOString().split('T')[0],
   };
   modoToma = "PRECIO";
+  document.getElementById("pc-buscar").value = "";
   renderCategoriasMenu();
   goToScreen(2);
 }
@@ -683,6 +684,50 @@ function renderCategoriasMenu() {
   });
   container.innerHTML = html || `<div class="bg-white rounded-2xl shadow-sm py-8 text-center text-xs text-gray-400 italic">${modoToma === "INVENTARIO" ? "No hay productos SURA activos para el inventario." : "No hay sublíneas activas para la toma."}</div>`;
   document.getElementById("pc-te-tocan").textContent = `Te tocan ${total - hechas} de ${total}`;
+
+  const busqueda = document.getElementById("pc-buscar").value.trim();
+  document.getElementById("pc-buscar-limpiar").classList.toggle("hidden", !busqueda);
+  document.getElementById("pc-titulo-lista").textContent = busqueda ? "Productos encontrados" : "Sublíneas";
+  if (busqueda) renderBusquedaPriceCheck(busqueda);
+}
+
+/* Buscador de Price check: encuentra productos de la toma actual y muestra en
+   qué sublínea están; tocar uno abre la sublínea completa y lo resalta. */
+const MAX_RESULTADOS_BUSQUEDA = 40;
+
+function renderBusquedaPriceCheck(busqueda) {
+  const q = normTxt(busqueda);
+  const resultados = [];
+  categoriasParaToma().forEach(cat => sublineasParaToma(cat).forEach(sub => {
+    productosDelModo(cat, sub).forEach(p => {
+      const coincide = normTxt(p.producto).includes(q) || normTxt(p.marca).includes(q) || normTxt(p.size).includes(q) || (p.id && String(p.id) === busqueda);
+      if (coincide) resultados.push({ cat, sub, p });
+    });
+  }));
+  const container = document.getElementById("container-categorias");
+  document.getElementById("pc-te-tocan").textContent = `${resultados.length} producto${resultados.length === 1 ? "" : "s"}`;
+  if (!resultados.length) {
+    container.innerHTML = `<div class="bg-white rounded-2xl shadow-sm py-8 px-4 text-center text-xs text-gray-400">No se encontró «${escHtml(busqueda)}»${modoToma === "INVENTARIO" ? " entre los productos SURA" : ""}.</div>`;
+    return;
+  }
+  container.innerHTML = `<div class="bg-white rounded-2xl shadow-sm divide-y divide-gray-100 overflow-hidden">` +
+    resultados.slice(0, MAX_RESULTADOS_BUSQUEDA).map(({ cat, sub, p }) => {
+      const i = priceCheckRefs.push({ cat, sub, producto: p.producto }) - 1;
+      const estado = estadoSublineaParaCliente(cat, sub);
+      return `<button type="button" onclick="abrirSublineaPriceCheck(${i})" class="w-full text-left flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 transition">
+        <span class="min-w-0">
+          <span class="block text-sm font-medium text-gray-900">${escHtml(nombreLegible(p.producto))}</span>
+          <span class="block text-xs text-gray-500 mt-0.5"><i class="fa-regular fa-folder text-[10px] mr-1"></i>${escHtml(nombreLegible(sub))} · ${(n => `${n} producto${n === 1 ? "" : "s"}`)(productosDelModo(cat, sub).length)}</span>
+        </span>
+        <span class="flex items-center gap-1.5 flex-shrink-0 text-xs font-medium ${estado.clase}">${estado.clave === "HOY" ? '<i class="fa-solid fa-circle-check"></i>' : ""}${estado.texto}</span>
+      </button>`;
+    }).join("") + `</div>` +
+    (resultados.length > MAX_RESULTADOS_BUSQUEDA ? `<p class="px-1 pt-2 text-[11px] text-gray-400">Mostrando ${MAX_RESULTADOS_BUSQUEDA} de ${resultados.length}. Escribe más para afinar la búsqueda.</p>` : "");
+}
+
+function limpiarBusquedaPriceCheck() {
+  document.getElementById("pc-buscar").value = "";
+  renderCategoriasMenu();
 }
 
 function abrirSublineaPriceCheck(i) {
@@ -690,6 +735,16 @@ function abrirSublineaPriceCheck(i) {
   if (!r) return;
   categoriaSeleccionada = r.cat;
   seleccionarSublinea(r.sub);
+  if (r.producto) resaltarProductoEnSublinea(r.producto);
+}
+
+function resaltarProductoEnSublinea(nombre) {
+  const fila = [...document.querySelectorAll("#lista-productos-body .item-producto-row")]
+    .find(row => row.querySelector("[data-producto]").getAttribute("data-producto") === nombre);
+  if (!fila) return;
+  setTimeout(() => fila.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+  fila.classList.add("bg-blue-50", "ring-2", "ring-blue-400");
+  setTimeout(() => fila.classList.remove("bg-blue-50", "ring-2", "ring-blue-400"), 2200);
 }
 
 function htmlImagenYNombre(prod, slug) {
@@ -877,13 +932,22 @@ function mostrarToast(titulo, subtitulo = "") {
   toastTimer = setTimeout(() => toast.classList.add("hidden"), 3500);
 }
 
-async function terminarVisita() {
-  // Calcula lo pendiente de cada toma y vuelve a dejar la pestaña donde estaba.
+// "X de Y" sublíneas pendientes de una toma, sin depender de la pantalla.
+function pendientesDeToma(modo) {
   const modoActual = modoToma;
-  const pendientes = {};
-  ["PRECIO", "INVENTARIO"].forEach(m => { modoToma = m; renderCategoriasMenu(); pendientes[m] = document.getElementById("pc-te-tocan").textContent.replace("Te tocan ", ""); });
-  modoToma = modoActual; renderCategoriasMenu();
-  const ok = await mostrarConfirmacion(`${clienteActual.nombre}\nPrecios: ${pendientes.PRECIO} sublíneas pendientes.\nInventario SURA: ${pendientes.INVENTARIO} sublíneas pendientes.`, { titulo: "¿Terminar la visita?", textoConfirmar: "Terminar visita", variante: "info" });
+  modoToma = modo;
+  let total = 0, hechas = 0;
+  categoriasParaToma().forEach(cat => sublineasParaToma(cat).forEach(sub => {
+    if (!productosDelModo(cat, sub).length) return;
+    total++;
+    if (estadoSublineaParaCliente(cat, sub).clave === "HOY") hechas++;
+  }));
+  modoToma = modoActual;
+  return `${total - hechas} de ${total}`;
+}
+
+async function terminarVisita() {
+  const ok = await mostrarConfirmacion(`${clienteActual.nombre}\nPrecios: ${pendientesDeToma("PRECIO")} sublíneas pendientes.\nInventario SURA: ${pendientesDeToma("INVENTARIO")} sublíneas pendientes.`, { titulo: "¿Terminar la visita?", textoConfirmar: "Terminar visita", variante: "info" });
   if (ok) cambiarCliente();
 }
 
