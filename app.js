@@ -76,6 +76,7 @@ function mostrarConfirmacion(texto, opciones = {}) {
   const estilos = {
     advertencia: { icono: "fa-triangle-exclamation", colorFondo: "bg-amber-100", colorTexto: "text-amber-600", colorBoton: "bg-amber-500 hover:bg-amber-600" },
     peligro: { icono: "fa-trash-can", colorFondo: "bg-rose-100", colorTexto: "text-rose-600", colorBoton: "bg-rose-600 hover:bg-rose-700" },
+    info: { icono: "fa-flag-checkered", colorFondo: "bg-blue-100", colorTexto: "text-blue-600", colorBoton: "bg-blue-600 hover:bg-blue-700" },
   };
   const e = estilos[variante] || estilos.advertencia;
   return new Promise(resolve => {
@@ -331,7 +332,7 @@ function irAInicioSesion() {
    funcionan el botón "atrás" del navegador/teléfono y los favoritos.
    Escribir el link a mano NO salta los permisos: puedeVerPantalla() decide,
    y si no corresponde se devuelve al usuario a su pantalla de inicio. */
-const RUTAS_PANTALLA = { login: "login", 0: "inicio", 1: "cliente", 2: "categorias", 3: "sublineas", 4: "productos", 5: "analytics", 6: "administracion" };
+const RUTAS_PANTALLA = { login: "login", 0: "inicio", 1: "cliente", 2: "price-check", 4: "productos", 5: "analytics", 6: "administracion" };
 const PANTALLA_POR_RUTA = Object.fromEntries(Object.entries(RUTAS_PANTALLA).map(([id, ruta]) => [ruta, id === "login" ? "login" : Number(id)]));
 let destinoTrasLogin = null; // pantalla pedida por link antes de iniciar sesión
 
@@ -350,9 +351,8 @@ function puedeVerPantalla(screenId) {
     case 0: case 6: return sesionTipo === 'ADMIN';
     case 5: return sesionTipo === 'ADMIN' || sesionTipo === 'ANALYTICS';
     case 1: return capturaPermitida;
-    // Pantallas de captura: además requieren haber elegido cliente/categoría/sublínea.
+    // Pantallas de captura: además requieren haber elegido cliente/sublínea.
     case 2: return capturaPermitida && !!clienteActual.cod;
-    case 3: return capturaPermitida && !!clienteActual.cod && !!categoriaSeleccionada;
     case 4: return capturaPermitida && !!clienteActual.cod && !!categoriaSeleccionada && !!sublineaSeleccionada;
     default: return false;
   }
@@ -381,7 +381,7 @@ function navegarDesdeHash() {
   goToScreen(inicio, { reemplazar: true });
   // Pantallas de captura sin cliente elegido (ej. atrás/adelante tras cambiar de cliente) no son
   // un acceso indebido: solo se vuelve al inicio sin aviso.
-  const rolNoPermitido = [0, 5, 6].includes(pedida) || (sesionTipo === 'ANALYTICS' && [1, 2, 3, 4].includes(pedida));
+  const rolNoPermitido = [0, 5, 6].includes(pedida) || (sesionTipo === 'ANALYTICS' && [1, 2, 4].includes(pedida));
   if (rolNoPermitido) mostrarAlerta("No tienes acceso a esa sección. Te llevamos a tu pantalla de inicio.", "advertencia", "Acceso no permitido");
 }
 
@@ -401,8 +401,9 @@ function goToScreen(screenId, opciones = {}) {
     }
   }
   document.getElementById("modal-imagen-ampliada").classList.add("hidden");
-  document.getElementById("modal-guardar-exito").classList.add("hidden");
-  ["login", 0, 1, 2, 3, 4, 5, 6].forEach(id => document.getElementById(`screen-${id}`).classList.add("hidden"));
+  document.getElementById("toast").classList.add("hidden");
+  actualizarBarraVisita(screenId);
+  ["login", 0, 1, 2, 4, 5, 6].forEach(id => document.getElementById(`screen-${id}`).classList.add("hidden"));
   document.getElementById(`screen-${screenId}`).classList.remove("hidden");
   window.scrollTo({ top: 0, behavior: 'smooth' });
   document.getElementById("btn-cerrar-sesion").classList.toggle("hidden", screenId === "login");
@@ -507,6 +508,7 @@ async function iniciarCaptura() {
     ciudad: document.getElementById("select-ciudad").value || "",
     fecha: document.getElementById("fecha-captura").value || new Date().toISOString().split('T')[0],
   };
+  visitaInicio = Date.now();
   renderCategoriasMenu();
   goToScreen(2);
 }
@@ -521,14 +523,9 @@ function cambiarCliente() {
   document.getElementById("select-estado").value = "";
   document.getElementById("select-ciudad").value = "";
   document.getElementById("dropdown-clientes").classList.add("hidden");
+  visitaInicio = null;
   goToScreen(1);
 }
-
-const ICONOS_CATEGORIA = {
-  "CUIDADO DEL HOGAR": "fa-house-chimney-window text-blue-600 bg-blue-50 border-blue-200",
-  "CUIDADO PERSONAL": "fa-pump-soap text-emerald-600 bg-emerald-50 border-emerald-200",
-  "CUIDADO DEL BEBÉ": "fa-baby text-blue-600 bg-blue-50 border-blue-200",
-};
 
 /* ------------------- Orden de visualización (Categorías/Sublíneas/Productos) -------------------
    El Administrador puede reordenar (arrastrar y soltar) cómo se listan las
@@ -595,82 +592,100 @@ function obtenerProductosOrdenados(categoria, sublinea) {
   return ordenAutomaticoProductos(lista);
 }
 
-function renderCategoriasMenu() {
-  document.getElementById("resumen-nombre-s2").textContent = clienteActual.nombre;
-  document.getElementById("resumen-info-s2").textContent = `Cód: ${clienteActual.cod} | ${clienteActual.ciudad} (${clienteActual.region}) | Canal: ${clienteActual.canal}`;
-  const categoriasSet = categoriasParaToma();
-  const container = document.getElementById("container-categorias");
-  container.innerHTML = "";
-  categoriasSet.forEach(cat => {
-    const sublineasActivas = sublineasParaToma(cat);
-    const sublinesCount = sublineasActivas.length;
-    const productsCount = sublineasActivas.reduce((n, s) => n + productosParaToma(cat, s).length, 0);
-    const styleClass = ICONOS_CATEGORIA[cat] || "fa-layer-group text-slate-600 bg-slate-50 border-slate-200";
-    const card = document.createElement("div");
-    card.className = "bg-white rounded-2xl p-6 shadow-sm hover:shadow-xl border border-gray-200 hover:border-blue-500 cursor-pointer transition-all group flex flex-col justify-between space-y-4";
-    card.onclick = () => seleccionarCategoria(cat);
-    card.innerHTML = `<div class="flex items-center justify-between"><div class="w-12 h-12 rounded-xl flex items-center justify-center text-xl border ${styleClass}"><i class="fa-solid ${styleClass.split(' ')[0]}"></i></div><span class="text-[10px] font-bold bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full group-hover:bg-blue-600 group-hover:text-white transition">${sublinesCount} Sublíneas</span></div><div><h3 class="text-xl font-black text-gray-900 group-hover:text-blue-600 transition">${cat}</h3><p class="text-xs text-gray-500 mt-1">${productsCount} productos en catálogo.</p></div>`;
-    container.appendChild(card);
-  });
+/* ---------------- Price check (estilo CIMA) ----------------
+   Una sola pantalla con la tarjeta del cliente y TODAS sus sublíneas
+   (agrupadas por categoría), cada una con su estado para este cliente:
+   "Hoy" (ya se tomó en esta visita), "Hace N días" o "Nunca". */
+let priceCheckRefs = []; // índice -> {cat, sub}; evita meter nombres en los onclick
+
+function estadoSublineaParaCliente(cat, sub) {
+  const fechas = registrosPreciosDB
+    .filter(r => r.codCliente === clienteActual.cod && normTxt(r.categoria) === normTxt(cat) && normTxt(r.sublinea) === normTxt(sub))
+    .map(r => r.fecha).filter(Boolean).sort();
+  if (!fechas.length) return { clave: "NUNCA", texto: "Nunca", clase: "text-amber-500" };
+  const ultima = fechas[fechas.length - 1];
+  if (ultima === clienteActual.fecha) return { clave: "HOY", texto: "Hoy", clase: "text-emerald-600" };
+  const dias = Math.round((new Date(clienteActual.fecha) - new Date(ultima)) / 86400000);
+  const texto = dias > 0 ? (dias === 1 ? "Ayer" : `Hace ${dias} días`) : ultima;
+  return { clave: "ANTES", texto, clase: "text-slate-500" };
 }
 
-function seleccionarCategoria(cat) {
-  categoriaSeleccionada = cat;
-  document.getElementById("titulo-categoria-activa").textContent = cat;
-  document.getElementById("resumen-nombre-s3").textContent = clienteActual.nombre;
-  document.getElementById("resumen-info-s3").textContent = `Cód: ${clienteActual.cod} | ${clienteActual.region}`;
-  const sublineasSet = sublineasParaToma(cat);
-  const container = document.getElementById("container-sublineas");
-  container.innerHTML = "";
-  sublineasSet.forEach(sub => {
-    const prodCount = productosParaToma(cat, sub).length;
-    const item = document.createElement("div");
-    item.className = "bg-white p-4 rounded-xl shadow-sm hover:shadow-md border border-gray-200 hover:border-blue-500 cursor-pointer transition flex items-center justify-between group";
-    item.onclick = () => seleccionarSublinea(sub);
-    item.innerHTML = `<div class="flex items-center space-x-3"><div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs group-hover:bg-blue-600 group-hover:text-white transition"><i class="fa-solid fa-folder"></i></div><div><h4 class="font-bold text-gray-800 text-sm group-hover:text-blue-600 transition">${sub}</h4><span class="text-[10px] text-gray-400 font-medium">${prodCount} productos en lista</span></div></div><i class="fa-solid fa-chevron-right text-gray-300 text-xs group-hover:text-blue-600 group-hover:translate-x-0.5 transition"></i>`;
-    container.appendChild(item);
+function renderCategoriasMenu() {
+  document.getElementById("pc-cliente-nombre").textContent = clienteActual.nombre;
+  document.getElementById("pc-cliente-info").textContent = `${clienteActual.cod} · ${clienteActual.ciudad || clienteActual.region} · ${clienteActual.canal}`;
+  const container = document.getElementById("container-categorias");
+  priceCheckRefs = [];
+  let total = 0, hechas = 0;
+  let html = "";
+  categoriasParaToma().forEach(cat => {
+    const filas = sublineasParaToma(cat).map(sub => {
+      const estado = estadoSublineaParaCliente(cat, sub);
+      total++; if (estado.clave === "HOY") hechas++;
+      return { sub, estado, productos: productosParaToma(cat, sub).length };
+    });
+    // Las pendientes arriba; las ya tomadas hoy bajan al final del grupo.
+    filas.sort((a, b) => (a.estado.clave === "HOY") - (b.estado.clave === "HOY"));
+    html += `<div class="space-y-1.5">
+      <p class="px-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">${escHtml(cat)}</p>
+      <div class="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">` +
+      filas.map(({ sub, estado, productos }) => {
+        const i = priceCheckRefs.push({ cat, sub }) - 1;
+        const hoy = estado.clave === "HOY";
+        return `<button type="button" onclick="abrirSublineaPriceCheck(${i})" class="w-full text-left flex items-center justify-between gap-3 px-4 py-3 hover:bg-blue-50/60 transition ${hoy ? "bg-emerald-50/40" : ""}">
+          <span class="min-w-0"><span class="block font-semibold text-sm text-gray-900">${escHtml(sub)}</span><span class="block text-[11px] text-gray-400">${productos} producto${productos === 1 ? "" : "s"}</span></span>
+          <span class="flex items-center gap-2 flex-shrink-0 text-xs font-semibold ${estado.clase}">${hoy ? '<i class="fa-solid fa-circle-check"></i>' : ""}${estado.texto}<i class="fa-solid fa-chevron-right text-gray-300 text-[10px]"></i></span>
+        </button>`;
+      }).join("") + `</div></div>`;
   });
-  goToScreen(3);
+  container.innerHTML = html || `<div class="bg-white rounded-2xl border border-gray-200 py-8 text-center text-xs text-gray-400 italic">No hay sublíneas activas para la toma.</div>`;
+  document.getElementById("pc-te-tocan").textContent = `Te tocan ${total - hechas} de ${total}`;
+}
+
+function abrirSublineaPriceCheck(i) {
+  const r = priceCheckRefs[i];
+  if (!r) return;
+  categoriaSeleccionada = r.cat;
+  seleccionarSublinea(r.sub);
 }
 
 function seleccionarSublinea(sub) {
   sublineaSeleccionada = sub;
-  document.getElementById("bc-categoria").textContent = categoriaSeleccionada;
-  document.getElementById("bc-sublinea").textContent = sublineaSeleccionada;
   document.getElementById("titulo-sublinea-activa").textContent = sublineaSeleccionada;
+  document.getElementById("subtitulo-sublinea-activa").textContent = `${clienteActual.nombre} · precios en dólares`;
+  document.getElementById("search-producto-input").value = "";
   const productos = productosParaToma(categoriaSeleccionada, sublineaSeleccionada);
-  document.getElementById("count-productos-badge").textContent = `${productos.length} Productos`;
+  document.getElementById("btn-guardar-productos").textContent = `Guardar ${productos.length} producto${productos.length === 1 ? "" : "s"}`;
   const tbody = document.getElementById("lista-productos-body");
   tbody.innerHTML = "";
   productos.forEach(prod => {
     const existente = registrosPreciosDB.find(r => r.codCliente === clienteActual.cod && r.producto === prod.producto && r.fecha === clienteActual.fecha);
     const valPrecio = existente && existente.precio > 0 ? existente.precio.toFixed(2) : "";
     const valCantidad = existente && existente.precio > 0 && existente.cantidad > 0 ? existente.cantidad : "";
+    const marcadoNoEsta = existente && !(existente.precio > 0) && presenciaDeRegistro(existente) === "NO";
     const isSura = prod.tipo === "SURA";
     const slug = slugProducto(prod.producto);
-    // Tarjeta (no <tr>): en pantallas chicas queda todo apilado verticalmente
-    // (imagen+nombre arriba, precio abajo a lo ancho) para que el asesor no
-    // tenga que desplazarse horizontalmente entre el producto y su precio;
-    // en pantallas grandes se acomoda en una sola fila.
     const row = document.createElement("div");
-    row.className = "flex flex-col sm:flex-row sm:items-center gap-3 p-3 hover:bg-blue-50/50 transition item-producto-row";
+    row.className = "item-producto-row px-4 py-3 transition";
     row.setAttribute("data-search", `${prod.producto} ${prod.marca}`.toLowerCase());
+    row.setAttribute("data-no-esta", marcadoNoEsta ? "1" : "");
     row.innerHTML = `
-      <div class="flex items-center gap-3 flex-1 min-w-0">
-        <img id="img-prod-${slug}" src="" alt="" onclick="mostrarImagenAmpliada(this.src)" class="w-11 h-11 rounded-lg object-cover border border-gray-200 hidden flex-shrink-0 cursor-zoom-in hover:ring-2 hover:ring-blue-400 transition">
-        <div id="img-prod-${slug}-placeholder" class="w-11 h-11 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-300 flex-shrink-0"><i class="fa-solid fa-image text-sm"></i></div>
-        <div class="min-w-0">
-          <p class="font-bold text-gray-900 text-sm leading-snug">${prod.producto}</p>
-          <p class="text-xs text-gray-500 mt-0.5 flex items-center gap-1.5 flex-wrap"><span class="font-semibold">${prod.marca}</span><span class="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wider ${isSura ? 'bg-blue-100 text-blue-800 border border-blue-200' : 'bg-gray-100 text-gray-700 border border-gray-200'}">${prod.size || '-'}</span></p>
+      <div class="flex items-center gap-3">
+        <img id="img-prod-${slug}" src="" alt="" onclick="mostrarImagenAmpliada(this.src)" class="w-12 h-12 rounded-xl object-cover border border-gray-100 hidden flex-shrink-0 cursor-zoom-in">
+        <div id="img-prod-${slug}-placeholder" class="w-12 h-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center text-gray-300 flex-shrink-0"><i class="fa-solid fa-image text-sm"></i></div>
+        <div class="min-w-0 flex-1">
+          <p class="font-semibold text-gray-900 text-sm leading-snug">${prod.producto}</p>
+          <p class="text-xs text-gray-500 mt-0.5">${prod.marca} · <span class="font-semibold ${isSura ? "text-blue-700" : "text-gray-600"}">${prod.size || "-"}</span>${isSura ? ' <span class="ml-1 text-[9px] font-black tracking-wider text-blue-700 bg-blue-50 border border-blue-100 rounded px-1 py-0.5">SURA</span>' : ""}</p>
+        </div>
+        <div class="relative w-28 flex-shrink-0">
+          <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 font-semibold text-sm">$</span>
+          <input type="text" inputmode="numeric" autocomplete="off" placeholder="" value="${valPrecio}" data-producto="${prod.producto}" data-marca="${prod.marca}" data-tipo="${prod.tipo}" data-size="${prod.size || ''}" onkeydown="manejarTeclaPrecioATM(event)" onpaste="manejarPegadoPrecioATM(event)" class="input-precio-prod w-full bg-gray-50 border border-transparent rounded-xl pl-7 pr-3 py-2.5 text-right font-bold text-gray-900 text-base focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition">
         </div>
       </div>
-      <div class="w-full sm:w-auto flex items-center gap-2 flex-shrink-0">
-        <span class="etiqueta-presencia flex-shrink-0 w-20 text-center rounded-lg py-2.5 sm:py-1.5 text-[11px] font-bold border"></span>
-        <input type="text" inputmode="numeric" autocomplete="off" placeholder="Cant." value="${valCantidad}" title="Cantidad contada en anaquel" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4)" class="input-cantidad-prod w-16 sm:w-20 flex-shrink-0 border border-gray-300 rounded-lg px-2 py-2.5 sm:py-1.5 text-center font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm sm:text-xs disabled:bg-gray-100 disabled:text-gray-300 disabled:cursor-not-allowed">
-        <div class="relative rounded-lg shadow-sm flex-1 sm:flex-none sm:w-32">
-          <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><span class="text-gray-400 font-bold text-sm">$</span></div>
-          <input type="text" inputmode="numeric" autocomplete="off" placeholder="0.00" value="${valPrecio}" data-producto="${prod.producto}" data-marca="${prod.marca}" data-tipo="${prod.tipo}" data-size="${prod.size || ''}" onkeydown="manejarTeclaPrecioATM(event)" onpaste="manejarPegadoPrecioATM(event)" class="input-precio-prod w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2.5 sm:py-1.5 text-right font-extrabold text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm sm:text-xs disabled:bg-gray-100 disabled:text-gray-300 disabled:cursor-not-allowed">
-        </div>
+      <div class="flex items-center justify-end gap-2 mt-1.5">
+        <label class="etiqueta-cantidad flex items-center gap-1.5 text-[11px] text-gray-400 font-semibold">Cant.
+          <input type="text" inputmode="numeric" autocomplete="off" value="${valCantidad}" title="Cantidad contada en anaquel" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4)" class="input-cantidad-prod w-14 bg-gray-50 border border-transparent rounded-lg px-2 py-1 text-center font-bold text-gray-900 text-xs focus:bg-white focus:border-blue-500 outline-none disabled:opacity-40 disabled:cursor-not-allowed transition">
+        </label>
+        <button type="button" onclick="marcarNoEsta(this)" class="btn-no-esta text-[11px] font-semibold px-3 py-1 rounded-full border transition">No está</button>
       </div>`;
     actualizarPresenciaFila(row);
     tbody.appendChild(row);
@@ -762,15 +777,64 @@ function precioDeInput(input) {
   return !isNaN(leido) && leido > 0 ? leido : 0;
 }
 
+// Estado de la fila: con precio "está"; tocar "No está" la marca en amarillo
+// (y borra precio y cantidad). Escribir un precio quita la marca "No está".
 function actualizarPresenciaFila(row) {
   if (!row) return;
-  const esta = precioDeInput(row.querySelector(".input-precio-prod")) > 0;
-  const etiqueta = row.querySelector(".etiqueta-presencia");
-  etiqueta.innerHTML = esta ? '<i class="fa-solid fa-check"></i> Está' : '<i class="fa-solid fa-xmark"></i> No está';
-  etiqueta.className = `etiqueta-presencia flex-shrink-0 w-20 text-center rounded-lg py-2.5 sm:py-1.5 text-[11px] font-bold border ${esta ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-50 text-gray-400 border-gray-200"}`;
+  const precioInput = row.querySelector(".input-precio-prod");
+  const tienePrecio = precioDeInput(precioInput) > 0;
+  if (tienePrecio) row.setAttribute("data-no-esta", "");
+  const noEsta = row.getAttribute("data-no-esta") === "1";
+  const boton = row.querySelector(".btn-no-esta");
+  boton.className = `btn-no-esta text-[11px] font-semibold px-3 py-1 rounded-full border transition ${noEsta ? "bg-amber-50 text-amber-700 border-amber-400" : "bg-white text-gray-400 border-transparent hover:border-gray-200"}`;
+  row.classList.toggle("bg-amber-50/40", noEsta);
   const cantidad = row.querySelector(".input-cantidad-prod");
-  cantidad.disabled = !esta;
-  if (!esta) cantidad.value = "";
+  cantidad.disabled = !tienePrecio;
+  if (!tienePrecio) cantidad.value = "";
+}
+
+function marcarNoEsta(boton) {
+  const row = boton.closest(".item-producto-row");
+  const marcar = row.getAttribute("data-no-esta") !== "1";
+  row.setAttribute("data-no-esta", marcar ? "1" : "");
+  if (marcar) row.querySelector(".input-precio-prod").value = "";
+  actualizarPresenciaFila(row);
+}
+
+/* Aviso flotante abajo (estilo CIMA), se cierra solo. */
+let toastTimer = null;
+function mostrarToast(titulo, subtitulo = "") {
+  const toast = document.getElementById("toast");
+  document.getElementById("toast-titulo").textContent = titulo;
+  document.getElementById("toast-subtitulo").textContent = subtitulo;
+  toast.classList.remove("hidden");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.add("hidden"), 3500);
+}
+
+/* Visita: barra azul "En visita: CLIENTE · mm:ss" mientras se toman precios. */
+let visitaInicio = null;
+let visitaTimer = null;
+function actualizarBarraVisita(screenId) {
+  const barra = document.getElementById("barra-visita");
+  const mostrar = visitaInicio && (screenId === 2 || screenId === 4);
+  barra.classList.toggle("hidden", !mostrar);
+  clearInterval(visitaTimer);
+  if (!mostrar) return;
+  document.getElementById("barra-visita-cliente").textContent = clienteActual.nombre;
+  const pintar = () => {
+    const seg = Math.floor((Date.now() - visitaInicio) / 1000);
+    const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60), s = seg % 60;
+    document.getElementById("barra-visita-tiempo").textContent = (h ? h + ":" + String(m).padStart(2, "0") : String(m).padStart(2, "0")) + ":" + String(s).padStart(2, "0");
+  };
+  pintar();
+  visitaTimer = setInterval(pintar, 1000);
+}
+
+async function terminarVisita() {
+  const texto = document.getElementById("pc-te-tocan").textContent;
+  const ok = await mostrarConfirmacion(`${clienteActual.nombre}\n${texto.replace("Te tocan", "Quedan pendientes")} sublíneas.`, { titulo: "¿Terminar la visita?", textoConfirmar: "Terminar visita", variante: "info" });
+  if (ok) cambiarCliente();
 }
 
 async function guardarPreciosToma() {
@@ -794,8 +858,11 @@ async function guardarPreciosToma() {
     });
   });
   if (candidatos.length === 0) return;
-  if (!candidatos.some(c => c.val > 0)) {
-    const continuar = await mostrarConfirmacion("Ningún producto tiene precio: se guardarán todos como \"No está\" en el anaquel. ¿Deseas continuar?", { titulo: "Sin precios", textoConfirmar: "Sí, guardar" });
+  // Igual que en CIMA: cada producto debería tener precio o «No está». Los que
+  // quedaron vacíos se guardan como «No está», avisando antes.
+  const sinMarcar = [...inputs].filter(inp => precioDeInput(inp) === 0 && inp.closest(".item-producto-row").getAttribute("data-no-esta") !== "1").length;
+  if (sinMarcar > 0) {
+    const continuar = await mostrarConfirmacion(`${sinMarcar} producto${sinMarcar === 1 ? "" : "s"} no tiene${sinMarcar === 1 ? "" : "n"} precio ni «No está». Se guardarán como «No está» en el anaquel. ¿Deseas continuar?`, { titulo: "Productos sin precio", textoConfirmar: "Sí, guardar" });
     if (!continuar) return;
   }
 
@@ -825,7 +892,9 @@ async function guardarPreciosToma() {
 
   localStorage.setItem('registrosPrecios', JSON.stringify(registrosPreciosDB));
   poblarFiltrosVisualizador(); // refresca Región/Estado/Ciudad de Analytics con los datos recién capturados
-  document.getElementById("modal-guardar-exito").classList.remove("hidden");
+  renderCategoriasMenu();
+  goToScreen(2);
+  mostrarToast(`«${sublineaSeleccionada}» queda en «Hoy»`, "Las pendientes siguen en «Nunca». Sigue con las demás sublíneas.");
 
   // Intenta subir a la nube en segundo plano; si falla (sin señal) queda
   // pendiente y se reintenta solo (ver sincronizarPendientes / evento 'online').

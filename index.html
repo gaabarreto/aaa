@@ -37,6 +37,12 @@
         </button>
       </div>
     </div>
+    <div id="barra-visita" class="hidden bg-blue-600 text-white">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1.5 flex items-center justify-between text-xs font-semibold">
+        <span class="flex items-center gap-2 min-w-0"><span class="w-1.5 h-1.5 rounded-full bg-white flex-shrink-0"></span><span class="truncate">En visita: <span id="barra-visita-cliente"></span></span></span>
+        <span id="barra-visita-tiempo" class="tabular-nums flex-shrink-0 ml-3">00:00</span>
+      </div>
+    </div>
   </header>
 
   <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
@@ -304,85 +310,47 @@
         </div>
 
         <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition duration-200 flex items-center justify-center space-x-2 text-sm mt-4">
-          <span>Siguiente: Categorías</span>
+          <span>Iniciar visita</span>
           <i class="fa-solid fa-arrow-right text-xs"></i>
         </button>
       </form>
     </div>
 
-    <!-- ==================== PANTALLAS DE CAPTURA (2, 3, 4) ==================== -->
-    <div id="screen-2" class="space-y-6 hidden">
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div class="flex items-center space-x-3">
-          <div class="p-3 bg-blue-100 text-blue-700 rounded-xl">
-            <i class="fa-solid fa-store text-xl"></i>
-          </div>
-          <div>
-            <span class="text-[10px] font-black text-blue-600 uppercase tracking-widest">Cliente Activo</span>
-            <h3 id="resumen-nombre-s2" class="text-lg font-bold text-gray-900"></h3>
-            <p id="resumen-info-s2" class="text-xs text-gray-500"></p>
-          </div>
+    <!-- ==================== PANTALLAS DE CAPTURA: PRICE CHECK (2) Y SUBLÍNEA (4) ==================== -->
+    <div id="screen-2" class="max-w-2xl mx-auto space-y-4 pb-6 hidden">
+      <div class="flex items-center gap-3">
+        <button onclick="cambiarCliente()" class="w-10 h-10 rounded-full hover:bg-white flex items-center justify-center text-gray-700 transition" title="Volver a clientes"><i class="fa-solid fa-arrow-left"></i></button>
+        <h2 class="text-xl font-bold text-gray-900">Price check</h2>
+      </div>
+      <div class="bg-white rounded-2xl border border-gray-200 p-4 flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h3 id="pc-cliente-nombre" class="font-bold text-gray-900 leading-tight"></h3>
+          <p id="pc-cliente-info" class="text-xs text-gray-400 mt-0.5"></p>
         </div>
-        <button onclick="cambiarCliente()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold px-4 py-2 rounded-lg transition flex items-center space-x-2 border border-gray-200">
-          <i class="fa-solid fa-user-pen"></i><span>Cambiar Cliente</span>
-        </button>
+        <span class="flex-shrink-0 text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full">En visita</span>
       </div>
-      <div>
-        <h2 class="text-2xl font-black text-gray-900">Menú 1: Categorías de Producto</h2>
-        <p class="text-sm text-gray-500">Selecciona la categoría que deseas auditar en esta visita.</p>
+      <div class="flex items-center justify-between px-1 pt-1">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-gray-500">Sublíneas</span>
+        <span id="pc-te-tocan" class="text-[11px] text-gray-500"></span>
       </div>
-      <div id="container-categorias" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
+      <div id="container-categorias" class="space-y-4"></div>
+      <button onclick="terminarVisita()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-sm transition text-sm">Terminar visita</button>
     </div>
 
-    <div id="screen-3" class="space-y-6 hidden">
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div class="flex items-center space-x-3">
-          <div class="p-3 bg-blue-100 text-blue-700 rounded-xl"><i class="fa-solid fa-store text-lg"></i></div>
-          <div>
-            <span class="text-[10px] font-black text-blue-600 uppercase tracking-widest">Cliente Activo</span>
-            <h3 id="resumen-nombre-s3" class="text-base font-bold text-gray-900"></h3>
-            <p id="resumen-info-s3" class="text-xs text-gray-500"></p>
-          </div>
-        </div>
-        <div class="flex items-center space-x-2">
-          <button onclick="goToScreen(2)" class="text-blue-600 hover:text-blue-800 text-xs font-bold px-3 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-50 transition flex items-center space-x-1">
-            <i class="fa-solid fa-arrow-left"></i><span>Volver</span>
-          </button>
-        </div>
+    <div id="screen-4" class="max-w-2xl mx-auto space-y-3 pb-28 hidden">
+      <div class="flex items-center gap-3">
+        <button onclick="goToScreen(2)" class="w-10 h-10 rounded-full hover:bg-white flex items-center justify-center text-gray-700 transition" title="Volver a Price check"><i class="fa-solid fa-arrow-left"></i></button>
+        <h2 id="titulo-sublinea-activa" class="text-xl font-bold text-gray-900"></h2>
       </div>
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-200 pb-3">
-        <div><span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Categoría Seleccionada</span><h2 id="titulo-categoria-activa" class="text-2xl font-black text-gray-900"></h2></div>
+      <p id="subtitulo-sublinea-activa" class="px-1 text-[11px] text-gray-500"></p>
+      <div class="relative">
+        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+        <input type="text" id="search-producto-input" onkeyup="filtrarTablaProductos()" placeholder="Buscar producto o marca..." class="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500">
       </div>
-      <div id="container-sublineas" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-    </div>
-
-    <div id="screen-4" class="space-y-6 hidden">
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5 space-y-3">
-        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
-          <div class="flex items-center space-x-2 text-xs font-bold text-gray-500"><span id="bc-categoria" class="text-blue-600"></span><i class="fa-solid fa-chevron-right text-[10px]"></i><span id="bc-sublinea" class="text-gray-900"></span></div>
-          <span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-3 py-1 rounded-full flex items-center space-x-1"><i class="fa-solid fa-barcode text-xs"></i><span id="count-productos-badge">0 Productos</span></span>
-        </div>
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-          <div><h2 id="titulo-sublinea-activa" class="text-xl font-extrabold text-gray-900"></h2><p class="text-xs text-gray-500">Ingresa el precio ($ USD) y la cantidad contada en anaquel. Con precio el producto queda como "Está"; sin precio, "No está".</p></div>
-        </div>
-      </div>
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="p-4 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <div class="relative w-full sm:w-72">
-            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-gray-400 text-xs"></i>
-            <input type="text" id="search-producto-input" onkeyup="filtrarTablaProductos()" placeholder="Buscar producto o marca..." class="w-full pl-9 pr-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-          </div>
-        </div>
-        <div class="hidden sm:flex bg-slate-100 border-b border-gray-200 text-[11px] font-black uppercase tracking-wider text-slate-600 py-2.5 px-4">
-          <span class="flex-1">Producto (Maestro)</span>
-          <span class="flex-shrink-0 flex items-center gap-2 text-center"><span class="w-20">Anaquel</span><span class="w-20">Cantidad</span><span class="w-32 text-right">Precio ($ USD)</span></span>
-        </div>
-        <div id="lista-productos-body" class="divide-y divide-gray-100 custom-scrollbar"></div>
-        <div class="p-4 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <button onclick="goToScreen(3)" class="w-full sm:w-auto px-5 py-2.5 border border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-100 transition text-xs flex items-center justify-center space-x-2"><i class="fa-solid fa-arrow-left"></i><span>Atrás</span></button>
-          <div class="flex items-center space-x-3 w-full sm:w-auto">
-            <button onclick="guardarPreciosToma()" class="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-md transition text-xs flex items-center justify-center space-x-2"><i class="fa-solid fa-floppy-disk"></i><span>Guardar Precios</span></button>
-          </div>
+      <div id="lista-productos-body" class="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 overflow-hidden"></div>
+      <div class="fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-gray-200 p-3">
+        <div class="max-w-2xl mx-auto">
+          <button id="btn-guardar-productos" onclick="guardarPreciosToma()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-sm transition text-sm">Guardar productos</button>
         </div>
       </div>
     </div>
@@ -519,19 +487,20 @@
     </div>
   </div>
 
-  <!-- MODAL EXITO AL GUARDAR -->
   <!-- MODAL: imagen de producto ampliada (se abre al tocar la miniatura) -->
   <div id="modal-imagen-ampliada" onclick="cerrarImagenAmpliada()" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden cursor-zoom-out">
     <button onclick="cerrarImagenAmpliada()" class="absolute top-4 right-4 text-white/80 hover:text-white text-2xl w-10 h-10 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
     <img id="img-ampliada" src="" alt="" class="max-w-full max-h-[85vh] rounded-xl shadow-2xl" onclick="event.stopPropagation()">
   </div>
 
-  <div id="modal-guardar-exito" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
-    <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full text-center space-y-4">
-      <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-3xl"><i class="fa-solid fa-circle-check"></i></div>
-      <h3 class="text-xl font-black text-gray-900">Guardado Localmente</h3>
-      <p class="text-xs text-gray-500">Los registros han sido guardados sin conexión de manera segura.</p>
-      <div class="space-y-2 mt-4"><button onclick="document.getElementById('modal-guardar-exito').classList.add('hidden'); goToScreen(3);" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl text-xs">Siguiente Sublínea</button></div>
+  <!-- AVISO FLOTANTE (estilo CIMA): confirmaciones breves, se cierra solo -->
+  <div id="toast" class="hidden fixed bottom-24 inset-x-0 z-50 px-4 pointer-events-none">
+    <div class="max-w-md mx-auto bg-white rounded-2xl shadow-xl border border-gray-100 border-l-4 border-l-emerald-500 p-4 flex items-start gap-3">
+      <div class="w-9 h-9 rounded-full bg-emerald-500 text-white flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-check"></i></div>
+      <div class="min-w-0">
+        <p id="toast-titulo" class="font-bold text-gray-900 text-sm"></p>
+        <p id="toast-subtitulo" class="text-xs text-gray-500 mt-0.5"></p>
+      </div>
     </div>
   </div>
 
@@ -542,7 +511,7 @@
         <i id="modal-mensaje-icono-fa" class="fa-solid"></i>
       </div>
       <h3 id="modal-mensaje-titulo" class="text-xl font-black text-gray-900"></h3>
-      <p id="modal-mensaje-texto" class="text-xs text-gray-500"></p>
+      <p id="modal-mensaje-texto" class="text-xs text-gray-500 whitespace-pre-line"></p>
       <div class="space-y-2 mt-4">
         <button id="modal-mensaje-btn-confirmar" class="w-full text-white font-bold py-3 rounded-xl text-xs shadow transition"></button>
         <button id="modal-mensaje-btn-cancelar" class="hidden w-full border border-gray-300 hover:bg-gray-100 text-gray-600 font-bold py-2 rounded-xl text-xs transition">Cancelar</button>
