@@ -652,7 +652,7 @@ function renderCategoriasMenu() {
     tab.className = `flex-1 py-2.5 rounded-xl text-sm font-medium transition ${modoToma === m ? "bg-blue-600 text-white shadow" : "text-gray-700 hover:bg-gray-50"}`;
   });
   document.getElementById("pc-ayuda-modo").textContent = modoToma === "INVENTARIO"
-    ? "Solo productos SURA: marca si está en el anaquel y cuántas unidades contaste."
+    ? "Solo productos SURA: escribe las unidades contadas (se marca «Está» sola) o toca «No está»."
     : "Registra el precio de cada producto. Sin precio, el producto queda como «No está».";
   const container = document.getElementById("container-categorias");
   priceCheckRefs = [];
@@ -734,7 +734,7 @@ function seleccionarSublinea(sub) {
         </div>
       </div>`;
     } else {
-      const presencia = existente ? presenciaDeRegistro(existente) : "";
+      const presencia = existente && presenciaDeRegistro(existente) === "NO" ? "NO" : ""; // "Está" lo pone la cantidad
       const valCantidad = existente && existente.cantidad > 0 ? existente.cantidad : "";
       row.setAttribute("data-presencia", presencia);
       row.innerHTML = `
@@ -832,26 +832,37 @@ function precioDeInput(input) {
 }
 
 /* ----------------------- Inventario SURA: Está / No está + cantidad -----------------------
-   Escribir una cantidad marca "Está"; marcar "No está" borra la cantidad.
-   "Está" sin cantidad se permite (está en el anaquel pero no se contó). */
+   "Está" sale de la cantidad: solo se marca con una cantidad mayor a 0 (escribirla lo
+   marca solo; si vuelve a 0, se desmarca). "No está" borra la cantidad. */
+const cantidadDeFila = (row) => parseInt(row.querySelector(".input-cantidad-inv").value, 10) || 0;
+
 function pintarPresenciaInventario(row) {
+  const cantidad = cantidadDeFila(row);
+  if (cantidad > 0) row.setAttribute("data-presencia", "SI");
+  else if (row.getAttribute("data-presencia") === "SI") row.setAttribute("data-presencia", "");
   const presencia = row.getAttribute("data-presencia") || "";
-  row.querySelector(".btn-esta").className = `btn-esta text-xs px-3 py-1 rounded-full border transition ${presencia === "SI" ? "bg-emerald-50 text-emerald-700 border-emerald-400 font-medium" : "bg-white text-gray-700 border-transparent shadow-sm"}`;
+  const esta = row.querySelector(".btn-esta");
+  esta.className = `btn-esta text-xs px-3 py-1 rounded-full border transition ${presencia === "SI" ? "bg-emerald-50 text-emerald-700 border-emerald-400 font-medium" : "bg-white/60 text-gray-400 border-transparent"}`;
+  esta.title = cantidad > 0 ? "" : "Escribe primero la cantidad contada";
   row.querySelector(".btn-no-esta").className = `btn-no-esta text-xs px-3 py-1 rounded-full border transition ${presencia === "NO" ? "bg-amber-50 text-amber-600 border-amber-300 font-medium" : "bg-white text-gray-700 border-transparent shadow-sm"}`;
 }
 
 function onCantidadInventario(input) {
   input.value = input.value.replace(/[^0-9]/g, "").slice(0, 4);
-  const row = input.closest(".item-producto-row");
-  if (parseInt(input.value, 10) > 0) row.setAttribute("data-presencia", "SI");
-  pintarPresenciaInventario(row);
+  pintarPresenciaInventario(input.closest(".item-producto-row"));
 }
 
 function marcarPresenciaInventario(boton, presencia) {
   const row = boton.closest(".item-producto-row");
-  const nueva = row.getAttribute("data-presencia") === presencia ? "" : presencia; // tocar de nuevo desmarca
+  const input = row.querySelector(".input-cantidad-inv");
+  if (presencia === "SI") {
+    // "Está" no se marca a mano: depende de la cantidad. Sin cantidad, lleva al campo.
+    if (cantidadDeFila(row) === 0) { input.focus(); input.select(); }
+    return;
+  }
+  const nueva = row.getAttribute("data-presencia") === "NO" ? "" : "NO"; // tocar de nuevo desmarca
   row.setAttribute("data-presencia", nueva);
-  if (nueva === "NO") row.querySelector(".input-cantidad-inv").value = "";
+  if (nueva === "NO") input.value = "";
   pintarPresenciaInventario(row);
 }
 
@@ -896,7 +907,7 @@ async function guardarPreciosToma() {
   // Primera pasada: solo valida y confirma, sin tocar registrosPreciosDB todavía
   // (así un "Cancelar" en la confirmación no deja cambios a medias).
   if (inventario) {
-    const sinMarcar = filas.filter(f => !f.marcada && f.cantidad === 0).length;
+    const sinMarcar = filas.filter(f => f.marcada !== "NO" && f.cantidad === 0).length;
     if (sinMarcar > 0) {
       const continuar = await mostrarConfirmacion(`${sinMarcar} producto${sinMarcar === 1 ? "" : "s"} SURA sin marcar. Se guardará${sinMarcar === 1 ? "" : "n"} como «No está» en el anaquel. ¿Deseas continuar?`, { titulo: "Productos sin marcar", textoConfirmar: "Sí, guardar" });
       if (!continuar) return;
@@ -926,7 +937,7 @@ async function guardarPreciosToma() {
       producto: prodNombre, marca: f.inp.getAttribute("data-marca"), size: f.inp.getAttribute("data-size") || "", tipo: f.inp.getAttribute("data-tipo"),
       toma: inventario ? "INVENTARIO" : "PRECIO",
       precio: inventario ? 0 : f.val, // 0 = sin precio
-      presencia: inventario ? (f.cantidad > 0 ? "SI" : (f.marcada || "NO")) : (f.val > 0 ? "SI" : "NO"),
+      presencia: inventario ? (f.cantidad > 0 ? "SI" : "NO") : (f.val > 0 ? "SI" : "NO"),
       cantidad: inventario ? f.cantidad : 0, // unidades contadas en anaquel (solo inventario SURA)
       synced: false, // se marca true cuando llega a la nube (ver sincronizarPendientes)
     };
