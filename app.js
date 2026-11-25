@@ -186,6 +186,10 @@ function cargarMaestroProductos(event) {
           size: (r["Size Unificado"] || "").toString().trim(),
           tipo: (r["Tipo"] || "COMPETENCIA").toString().trim(),
           categoria: (r["Categoria"] || "GENERAL").toString().trim(),
+          // Opcionales, para el escáner de código de barras (y pasar bultos a unidades).
+          barrasUnidad: (r["Barras Unidad"] ?? "").toString().replace(/\D/g, ""),
+          barrasBulto: (r["Barras Bulto"] ?? "").toString().replace(/\D/g, ""),
+          unidadesPorBulto: parseInt(r["Unidades por Bulto"], 10) || 0,
         })).filter(p => p.producto);
         localStorage.setItem('maestroProductos', JSON.stringify(MAESTRO_PRODUCTOS));
         const sincronizado = await subirMaestroANube("productos", MAESTRO_PRODUCTOS);
@@ -402,6 +406,7 @@ function goToScreen(screenId, opciones = {}) {
   }
   document.getElementById("modal-imagen-ampliada").classList.add("hidden");
   document.getElementById("toast").classList.add("hidden");
+  if (escanerActivo || !document.getElementById("modal-escaner").classList.contains("hidden")) cerrarEscaner();
   ["login", 0, 1, 2, 4, 5, 6].forEach(id => document.getElementById(`screen-${id}`).classList.add("hidden"));
   document.getElementById(`screen-${screenId}`).classList.remove("hidden");
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -700,7 +705,8 @@ function renderBusquedaPriceCheck(busqueda) {
   const resultados = [];
   categoriasParaToma().forEach(cat => sublineasParaToma(cat).forEach(sub => {
     productosDelModo(cat, sub).forEach(p => {
-      const coincide = normTxt(p.producto).includes(q) || normTxt(p.marca).includes(q) || normTxt(p.size).includes(q) || (p.id && String(p.id) === busqueda);
+      const coincide = normTxt(p.producto).includes(q) || normTxt(p.marca).includes(q) || normTxt(p.size).includes(q) || (p.id && String(p.id) === busqueda)
+        || (claveBarras(busqueda).length >= 6 && [p.barrasUnidad, p.barrasBulto].some(b => b && claveBarras(b) === claveBarras(busqueda)));
       if (coincide) resultados.push({ cat, sub, p });
     });
   }));
@@ -741,10 +747,11 @@ function abrirSublineaPriceCheck(i) {
 function resaltarProductoEnSublinea(nombre) {
   const fila = [...document.querySelectorAll("#lista-productos-body .item-producto-row")]
     .find(row => row.querySelector("[data-producto]").getAttribute("data-producto") === nombre);
-  if (!fila) return;
+  if (!fila) return null;
   setTimeout(() => fila.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
   fila.classList.add("bg-blue-50", "ring-2", "ring-blue-400");
   setTimeout(() => fila.classList.remove("bg-blue-50", "ring-2", "ring-blue-400"), 2200);
+  return fila;
 }
 
 function htmlImagenYNombre(prod, slug) {
@@ -940,6 +947,154 @@ function marcarPresenciaInventario(boton, presencia) {
   row.setAttribute("data-presencia", nueva);
   if (nueva === "NO") input.value = "";
   pintarPresenciaInventario(row);
+}
+
+/* ----------------------- Escáner de código de barras -----------------------
+   Usa el lector nativo del navegador (BarcodeDetector, Chrome en Android) y, si no
+   existe (iPhone), carga la librería ZXing la primera vez que se abre el escáner.
+   Al leer un código: busca el producto en la maestra (Barras Unidad / Barras Bulto),
+   abre su sublínea, lo resalta y deja el cursor en su campo. En Inventario SURA,
+   el código del bulto pone "Bultos" y el de la unidad pone "Unidades". */
+const URL_LECTOR_ZXING = "https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js";
+let escanerActivo = false;
+let escanerStream = null;
+let escanerControlesZxing = null;
+let escanerUltimoCodigo = { codigo: "", hora: 0 };
+
+const claveBarras = (v) => (v ?? "").toString().replace(/\D/g, "").replace(/^0+/, ""); // UPC-A (12) = EAN-13 con 0 adelante
+
+function buscarProductoPorCodigo(codigo) {
+  const c = claveBarras(codigo);
+  if (!c) return null;
+  for (const p of MAESTRO_PRODUCTOS) {
+    if (p.barrasUnidad && claveBarras(p.barrasUnidad) === c) return { p, unidad: "UNIDADES" };
+    if (p.barrasBulto && claveBarras(p.barrasBulto) === c) return { p, unidad: "BULTOS" };
+  }
+  return null;
+}
+
+function estadoEscaner(texto, tipo = "info") {
+  const el = document.getElementById("escaner-estado");
+  el.textContent = texto;
+  el.className = `text-sm text-center ${tipo === "error" ? "text-rose-600 font-medium" : "text-gray-600"}`;
+}
+
+function cargarScript(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error("no se pudo cargar el lector (revisa la conexión)"));
+    document.head.appendChild(script);
+  });
+}
+
+async function abrirEscaner() {
+  document.getElementById("toast").classList.add("hidden");
+  document.getElementById("modal-escaner").classList.remove("hidden");
+  document.getElementById("escaner-manual").value = "";
+  estadoEscaner("Apunta al código de barras del producto o del bulto.");
+  escanerActivo = true;
+  escanerUltimoCodigo = { codigo: "", hora: 0 };
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("este navegador no permite usar la cámara");
+    const nativo = "BarcodeDetector" in window && (await BarcodeDetector.getSupportedFormats()).includes("ean_13");
+    if (nativo) await escanearConLectorNativo();
+    else await escanearConZxing();
+  } catch (err) {
+    if (escanerActivo) estadoEscaner(`No se pudo abrir la cámara: ${err.message}. Escribe el código abajo.`, "error");
+  }
+}
+
+async function escanearConLectorNativo() {
+  const video = document.getElementById("escaner-video");
+  escanerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+  if (!escanerActivo) { detenerCamara(); return; }
+  video.srcObject = escanerStream;
+  await video.play();
+  const detector = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "itf"] });
+  const leer = async () => {
+    if (!escanerActivo) return;
+    try {
+      const codigos = await detector.detect(video);
+      if (codigos.length) procesarCodigoEscaneado(codigos[0].rawValue);
+    } catch (err) { /* cuadro sin imagen todavía: se sigue intentando */ }
+    if (escanerActivo) setTimeout(leer, 150);
+  };
+  leer();
+}
+
+async function escanearConZxing() {
+  if (!window.ZXingBrowser) {
+    estadoEscaner("Preparando el lector...");
+    await cargarScript(URL_LECTOR_ZXING);
+    if (!escanerActivo) return;
+    estadoEscaner("Apunta al código de barras del producto o del bulto.");
+  }
+  const lector = new ZXingBrowser.BrowserMultiFormatReader();
+  escanerControlesZxing = await lector.decodeFromConstraints(
+    { video: { facingMode: "environment" }, audio: false },
+    document.getElementById("escaner-video"),
+    (resultado) => { if (resultado && escanerActivo) procesarCodigoEscaneado(resultado.getText()); }
+  );
+  if (!escanerActivo) detenerCamara();
+}
+
+function detenerCamara() {
+  escanerActivo = false;
+  if (escanerControlesZxing) { escanerControlesZxing.stop(); escanerControlesZxing = null; }
+  if (escanerStream) { escanerStream.getTracks().forEach(t => t.stop()); escanerStream = null; }
+  document.getElementById("escaner-video").srcObject = null;
+}
+
+function cerrarEscaner() {
+  detenerCamara();
+  document.getElementById("modal-escaner").classList.add("hidden");
+}
+
+const hayDatosSinGuardar = () => [...document.querySelectorAll("#lista-productos-body input")].some(i => i.value.trim());
+
+async function procesarCodigoEscaneado(codigoLeido) {
+  const codigo = (codigoLeido || "").toString().trim();
+  if (!codigo) return;
+  // La cámara lee el mismo código muchas veces por segundo: se ignora la repetición.
+  const ahora = Date.now();
+  if (codigo === escanerUltimoCodigo.codigo && ahora - escanerUltimoCodigo.hora < 2500) return;
+  escanerUltimoCodigo = { codigo, hora: ahora };
+  if (navigator.vibrate) navigator.vibrate(60);
+
+  const encontrado = buscarProductoPorCodigo(codigo);
+  if (!encontrado) { estadoEscaner(`El código ${codigo} no está en la maestra de productos.`, "error"); return; }
+  const { p, unidad } = encontrado;
+  if (modoToma === "INVENTARIO" && p.tipo !== "SURA") {
+    estadoEscaner(`«${nombreLegible(p.producto)}» es de la competencia: búscalo en la pestaña Precios.`, "error");
+    return;
+  }
+  if (!productosDelModo(p.categoria, p.sublinea).some(x => x.producto === p.producto)) {
+    estadoEscaner(`«${nombreLegible(p.producto)}» está inactivo para la toma.`, "error");
+    return;
+  }
+
+  const pantallaSublinea = !document.getElementById("screen-4").classList.contains("hidden");
+  const mismaSublinea = pantallaSublinea && categoriaSeleccionada === p.categoria && sublineaSeleccionada === p.sublinea;
+  cerrarEscaner();
+  if (!mismaSublinea) {
+    if (pantallaSublinea && hayDatosSinGuardar()) {
+      const seguir = await mostrarConfirmacion(`Tienes datos sin guardar en «${nombreLegible(sublineaSeleccionada)}». ¿Ir a «${nombreLegible(p.sublinea)}» sin guardarlos?`, { titulo: "Datos sin guardar", textoConfirmar: "Sí, ir" });
+      if (!seguir) return;
+    }
+    categoriaSeleccionada = p.categoria;
+    seleccionarSublinea(p.sublinea);
+  }
+  const fila = resaltarProductoEnSublinea(p.producto);
+  if (!fila) return;
+  if (modoToma === "INVENTARIO") {
+    cambiarUnidadInventario(fila.querySelector(".btn-unidad-und"), unidad);
+    fila.querySelector(".input-cantidad-inv").focus();
+  } else {
+    fila.querySelector(".input-precio-prod").focus();
+  }
+  mostrarToast(`Escaneado: ${nombreLegible(p.producto)}`, modoToma === "INVENTARIO" ? `Código de ${unidad === "BULTOS" ? `bulto${p.unidadesPorBulto ? ` (${p.unidadesPorBulto} und)` : ""}` : "unidad"}: escribe la cantidad contada.` : "Escribe el precio del anaquel.");
 }
 
 /* Aviso flotante abajo (estilo CIMA), se cierra solo. */
@@ -1511,6 +1666,14 @@ function renderTablaCoberturaAsesor(data) {
 }
 
 /* ===================== 7. EXPORTACIÓN Y ADMINISTRACIÓN ===================== */
+// Bultos -> unidades con "Unidades por Bulto" de la maestra; vacío si no se conoce.
+function totalEnUnidades(r) {
+  if (!(r.cantidad > 0)) return "";
+  if (r.unidadMedida !== "BULTOS") return r.cantidad;
+  const p = MAESTRO_PRODUCTOS.find(x => x.producto === r.producto);
+  return p && p.unidadesPorBulto > 0 ? r.cantidad * p.unidadesPorBulto : "";
+}
+
 async function exportarExcel() {
   const dataFiltrada = obtenerDataFiltrada();
   if (!dataFiltrada.length) { await mostrarAlerta("Sin registros.", "info"); return; }
@@ -1534,6 +1697,7 @@ async function exportarExcel() {
     "Presencia en Anaquel": presenciaDeRegistro(r) === "SI" ? "Está" : "No está",
     "Cantidad en Anaquel": r.cantidad > 0 ? r.cantidad : "",
     "Unidad de Medida": r.cantidad > 0 ? (r.unidadMedida === "BULTOS" ? "Bultos" : "Unidades") : "",
+    "Total en Unidades": totalEnUnidades(r),
   }));
   const wb = XLSX.utils.book_new();
   if (precios.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(precios), "Precios");

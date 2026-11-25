@@ -154,7 +154,7 @@
           </div>
           <div>
             <h3 class="text-lg font-bold text-gray-900">Maestra de Productos</h3>
-            <p class="text-xs text-gray-500 mt-1">Sube un Excel con columnas: Producto, Linea, Sublinea, Size Real, Marca, Gama, Identificador, Size Unificado, Tipo, Categoria.</p>
+            <p class="text-xs text-gray-500 mt-1">Sube un Excel con columnas: ID, Producto, Linea, Sublinea, Size Real, Marca, Gama, Identificador, Size Unificado, Tipo, Categoria. Opcionales para el escáner: Barras Unidad, Barras Bulto, Unidades por Bulto.</p>
           </div>
           <input type="file" id="upload-productos" accept=".xlsx, .xls" class="hidden" onchange="cargarMaestroProductos(event)">
           <button onclick="document.getElementById('upload-productos').click()" class="w-full bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 font-bold py-2.5 rounded-lg text-sm transition">
@@ -354,8 +354,9 @@
         </div>
         <div class="relative">
           <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-          <input type="text" id="pc-buscar" oninput="renderCategoriasMenu()" autocomplete="off" placeholder="Buscar producto, marca o ID..." class="w-full pl-10 pr-10 py-3 text-sm bg-white rounded-2xl shadow-sm border border-transparent focus:outline-none focus:border-blue-400 placeholder:text-gray-400">
-          <button type="button" id="pc-buscar-limpiar" onclick="limpiarBusquedaPriceCheck()" class="hidden absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full text-gray-400 hover:bg-gray-50 hover:text-gray-700" title="Limpiar búsqueda"><i class="fa-solid fa-xmark"></i></button>
+          <input type="text" id="pc-buscar" oninput="renderCategoriasMenu()" autocomplete="off" placeholder="Buscar producto, marca, ID o código..." class="w-full pl-10 pr-20 py-3 text-sm bg-white rounded-2xl shadow-sm border border-transparent focus:outline-none focus:border-blue-400 placeholder:text-gray-400">
+          <button type="button" id="pc-buscar-limpiar" onclick="limpiarBusquedaPriceCheck()" class="hidden absolute right-12 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full text-gray-400 hover:bg-gray-50 hover:text-gray-700" title="Limpiar búsqueda"><i class="fa-solid fa-xmark"></i></button>
+          <button type="button" onclick="abrirEscaner()" class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition" title="Escanear código de barras"><i class="fa-solid fa-barcode"></i></button>
         </div>
         <div class="flex items-center justify-between px-1 pt-1">
           <span id="pc-titulo-lista" class="text-[11px] uppercase tracking-wider text-gray-500">Sublíneas</span>
@@ -373,7 +374,10 @@
       </div>
       <div class="px-4 sm:px-0 pt-3 space-y-2">
         <p id="subtitulo-sublinea-activa" class="px-1 text-[11px] text-gray-500"></p>
-        <input type="text" id="search-producto-input" onkeyup="filtrarTablaProductos()" placeholder="Buscar producto o marca..." class="w-full px-4 py-3 text-sm bg-white rounded-2xl shadow-sm border border-transparent focus:outline-none focus:border-blue-400 placeholder:text-gray-400">
+        <div class="relative">
+          <input type="text" id="search-producto-input" onkeyup="filtrarTablaProductos()" placeholder="Buscar producto o marca..." class="w-full pl-4 pr-14 py-3 text-sm bg-white rounded-2xl shadow-sm border border-transparent focus:outline-none focus:border-blue-400 placeholder:text-gray-400">
+          <button type="button" onclick="abrirEscaner()" class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition" title="Escanear código de barras"><i class="fa-solid fa-barcode"></i></button>
+        </div>
         <div id="lista-productos-body" class="pt-1"></div>
       </div>
       <div class="fixed bottom-0 inset-x-0 z-30 bg-gray-50/95 backdrop-blur px-4 pt-2 pb-4">
@@ -519,6 +523,27 @@
   <div id="modal-imagen-ampliada" onclick="cerrarImagenAmpliada()" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden cursor-zoom-out">
     <button onclick="cerrarImagenAmpliada()" class="absolute top-4 right-4 text-white/80 hover:text-white text-2xl w-10 h-10 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
     <img id="img-ampliada" src="" alt="" class="max-w-full max-h-[85vh] rounded-xl shadow-2xl" onclick="event.stopPropagation()">
+  </div>
+
+  <!-- ESCÁNER DE CÓDIGO DE BARRAS (cámara trasera) -->
+  <div id="modal-escaner" class="fixed inset-0 z-50 bg-black flex flex-col hidden">
+    <div class="flex items-center justify-between px-4 py-3 text-white">
+      <span class="font-medium">Escanear código de barras</span>
+      <button type="button" onclick="cerrarEscaner()" class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center" title="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="relative flex-1 overflow-hidden">
+      <video id="escaner-video" class="absolute inset-0 w-full h-full object-cover" playsinline muted autoplay></video>
+      <div class="absolute inset-x-8 top-1/2 -translate-y-1/2 h-36 rounded-2xl border-2 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] pointer-events-none">
+        <div class="absolute inset-x-4 top-1/2 h-0.5 bg-rose-500/90"></div>
+      </div>
+    </div>
+    <div class="bg-white rounded-t-3xl px-4 pt-4 pb-6 space-y-3">
+      <p id="escaner-estado" class="text-sm text-gray-600 text-center"></p>
+      <form onsubmit="event.preventDefault(); procesarCodigoEscaneado(document.getElementById('escaner-manual').value)" class="flex gap-2">
+        <input id="escaner-manual" type="text" inputmode="numeric" autocomplete="off" placeholder="O escribe el código..." class="flex-1 px-4 py-3 text-sm bg-gray-50 rounded-2xl border border-transparent focus:outline-none focus:border-blue-400">
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 rounded-2xl text-sm transition">Buscar</button>
+      </form>
+    </div>
   </div>
 
   <!-- AVISO FLOTANTE (estilo CIMA): confirmaciones breves, se cierra solo -->
