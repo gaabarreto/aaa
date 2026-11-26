@@ -154,7 +154,7 @@
           </div>
           <div>
             <h3 class="text-lg font-bold text-gray-900">Maestra de Productos</h3>
-            <p class="text-xs text-gray-500 mt-1">Sube un Excel con columnas: ID, Producto, Linea, Sublinea, Size Real, Marca, Gama, Identificador, Size Unificado, Tipo, Categoria. Opcionales para el escáner: Barras Unidad, Barras Bulto, Unidades por Bulto.</p>
+            <p class="text-xs text-gray-500 mt-1">Sube un Excel con columnas: ID, Producto, Linea, Sublinea, Size Real, Marca, Gama, Identificador, Size Unificado, Tipo, Categoria. Opcionales: Barras Unidad (código de barras del producto) y Unidades por Bulto.</p>
           </div>
           <input type="file" id="upload-productos" accept=".xlsx, .xls" class="hidden" onchange="cargarMaestroProductos(event)">
           <button onclick="document.getElementById('upload-productos').click()" class="w-full bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 font-bold py-2.5 rounded-lg text-sm transition">
@@ -170,7 +170,7 @@
             </div>
             <div>
               <h3 class="text-lg font-bold text-gray-900">Catálogo SURA (Inventario)</h3>
-              <p class="text-xs text-gray-500 mt-1">Sube el query de artículos (columnas: Codigo, Descripcion, Marca, CodBarraBulto, CodBarraProducto, Categoria, Linea, SubLinea, Color, Estatus_Anulado). Es la lista de productos de la toma de Inventario SURA, agrupada por Línea, con sus códigos de barras para el escáner. No incluye anulados, POP, material de empaque ni granel.</p>
+              <p class="text-xs text-gray-500 mt-1">Sube el query de artículos (columnas: Codigo, Descripcion, Marca, CodBarraProducto, Categoria, Linea, SubLinea, Color, Estatus_Anulado). El escáner usa CodBarraProducto. Es la lista de productos de la toma de Inventario SURA, agrupada por Línea, con sus códigos de barras para el escáner. No incluye anulados, POP, material de empaque ni granel.</p>
             </div>
           </div>
           <input type="file" id="upload-catalogo" accept=".xlsx, .xls" class="hidden" onchange="cargarCatalogoSura(event)">
@@ -373,7 +373,7 @@
           <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
           <input type="text" id="pc-buscar" oninput="renderCategoriasMenu()" autocomplete="off" placeholder="Buscar producto, marca, ID o código..." class="w-full pl-10 pr-20 py-3 text-sm bg-white rounded-2xl shadow-sm border border-transparent focus:outline-none focus:border-blue-400 placeholder:text-gray-400">
           <button type="button" id="pc-buscar-limpiar" onclick="limpiarBusquedaPriceCheck()" class="hidden absolute right-12 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full text-gray-400 hover:bg-gray-50 hover:text-gray-700" title="Limpiar búsqueda"><i class="fa-solid fa-xmark"></i></button>
-          <button type="button" onclick="abrirEscaner()" class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition" title="Escanear código de barras"><i class="fa-solid fa-barcode"></i></button>
+          <button type="button" id="btn-escanear-pc" onclick="abrirEscaner()" class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition" title="Escanear código de barras"><i class="fa-solid fa-barcode"></i></button>
         </div>
         <div class="flex items-center justify-between px-1 pt-1">
           <span id="pc-titulo-lista" class="text-[11px] uppercase tracking-wider text-gray-500">Sublíneas</span>
@@ -393,7 +393,7 @@
         <p id="subtitulo-sublinea-activa" class="px-1 text-[11px] text-gray-500"></p>
         <div class="relative">
           <input type="text" id="search-producto-input" onkeyup="filtrarTablaProductos()" placeholder="Buscar producto o marca..." class="w-full pl-4 pr-14 py-3 text-sm bg-white rounded-2xl shadow-sm border border-transparent focus:outline-none focus:border-blue-400 placeholder:text-gray-400">
-          <button type="button" onclick="abrirEscaner()" class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition" title="Escanear código de barras"><i class="fa-solid fa-barcode"></i></button>
+          <button type="button" id="btn-escanear-sub" onclick="abrirEscaner()" class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition" title="Escanear código de barras"><i class="fa-solid fa-barcode"></i></button>
         </div>
         <div id="lista-productos-body" class="pt-1"></div>
       </div>

@@ -190,7 +190,6 @@ function cargarMaestroProductos(event) {
           categoria: (r["Categoria"] || "GENERAL").toString().trim(),
           // Opcionales, para el escáner de código de barras (y pasar bultos a unidades).
           barrasUnidad: (r["Barras Unidad"] ?? "").toString().replace(/\D/g, ""),
-          barrasBulto: (r["Barras Bulto"] ?? "").toString().replace(/\D/g, ""),
           unidadesPorBulto: parseInt(r["Unidades por Bulto"], 10) || 0,
         })).filter(p => p.producto);
         localStorage.setItem('maestroProductos', JSON.stringify(MAESTRO_PRODUCTOS));
@@ -237,7 +236,6 @@ function convertirFilaCatalogo(r) {
     size: (r["Color"] || "").toString().trim(), // en el query, "Color" trae la presentación (1L, 500ML...)
     tipo: "SURA",
     barrasUnidad: (r["CodBarraProducto"] ?? "").toString().replace(/\D/g, ""),
-    barrasBulto: (r["CodBarraBulto"] ?? "").toString().replace(/\D/g, ""),
     unidadesPorBulto: unidadesPorBultoDeDescripcion(producto),
   };
 }
@@ -258,7 +256,7 @@ function cargarCatalogoSura(event) {
       MAESTRO_CATALOGO_SURA = filas.map(convertirFilaCatalogo).filter(Boolean);
       localStorage.setItem('maestroCatalogoSura', JSON.stringify(MAESTRO_CATALOGO_SURA));
       const sincronizado = await subirMaestroANube("catalogoSura", MAESTRO_CATALOGO_SURA);
-      const conCodigo = MAESTRO_CATALOGO_SURA.filter(p => p.barrasUnidad || p.barrasBulto).length;
+      const conCodigo = MAESTRO_CATALOGO_SURA.filter(p => p.barrasUnidad).length;
       status.textContent = `¡Éxito! ${MAESTRO_CATALOGO_SURA.length} artículos (${conCodigo} con código de barras, ${filas.length - MAESTRO_CATALOGO_SURA.length} excluidos)${sincronizado ? " y sincronizados a todos los dispositivos." : " (solo en este dispositivo; revisa la configuración de Firebase)."}`;
     } catch (err) {
       await mostrarAlerta("Error al leer el archivo: " + err.message, "error");
@@ -743,6 +741,13 @@ function renderCategoriasMenu() {
     const tab = document.getElementById(`tab-toma-${m.toLowerCase()}`);
     tab.className = `flex-1 py-2.5 rounded-xl text-sm font-medium transition ${modoToma === m ? "bg-blue-600 text-white shadow" : "text-gray-700 hover:bg-gray-50"}`;
   });
+  const inventario = modoToma === "INVENTARIO";
+  document.getElementById("btn-escanear-pc").classList.toggle("hidden", !inventario);
+  document.getElementById("pc-buscar").classList.toggle("pr-20", inventario);
+  document.getElementById("pc-buscar").classList.toggle("pr-10", !inventario);
+  document.getElementById("pc-buscar-limpiar").classList.toggle("right-12", inventario);
+  document.getElementById("pc-buscar-limpiar").classList.toggle("right-2", !inventario);
+  document.getElementById("pc-buscar").placeholder = inventario ? "Buscar producto, marca, código SURA o de barras..." : "Buscar producto, marca o ID...";
   document.getElementById("pc-ayuda-modo").textContent = modoToma === "INVENTARIO"
     ? "Solo productos SURA: escribe las unidades contadas (se marca «Está» sola) o toca «No está»."
     : "Registra el precio de cada producto. Sin precio, el producto queda como «No está».";
@@ -792,7 +797,7 @@ function renderBusquedaPriceCheck(busqueda) {
   gruposDelModo().forEach(({ cat, subs }) => subs.forEach(sub => {
     productosDelModo(cat, sub).forEach(p => {
       const coincide = normTxt(p.producto).includes(q) || normTxt(p.marca).includes(q) || normTxt(p.size).includes(q) || (p.id && String(p.id) === busqueda)
-        || (claveBarras(busqueda).length >= 6 && [p.barrasUnidad, p.barrasBulto].some(b => b && claveBarras(b) === claveBarras(busqueda)));
+        || (claveBarras(busqueda).length >= 6 && p.barrasUnidad && claveBarras(p.barrasUnidad) === claveBarras(busqueda));
       if (coincide) resultados.push({ cat, sub, p });
     });
   }));
@@ -865,6 +870,7 @@ function seleccionarSublinea(sub) {
     ? `${clienteActual.nombre} · inventario en anaquel de productos SURA`
     : `${clienteActual.nombre} · precios en dólares`;
   document.getElementById("search-producto-input").value = "";
+  document.getElementById("btn-escanear-sub").classList.toggle("hidden", !inventario);
   const productos = productosDelModo(categoriaSeleccionada, sublineaSeleccionada);
   document.getElementById("btn-guardar-productos").textContent = `Guardar ${productos.length} producto${productos.length === 1 ? "" : "s"}`;
   const tbody = document.getElementById("lista-productos-body");
@@ -1040,11 +1046,10 @@ function marcarPresenciaInventario(boton, presencia) {
 }
 
 /* ----------------------- Escáner de código de barras -----------------------
-   Usa el lector nativo del navegador (BarcodeDetector, Chrome en Android) y, si no
-   existe (iPhone), carga la librería ZXing la primera vez que se abre el escáner.
-   Al leer un código: busca el producto en la maestra (Barras Unidad / Barras Bulto),
-   abre su sublínea, lo resalta y deja el cursor en su campo. En Inventario SURA,
-   el código del bulto pone "Bultos" y el de la unidad pone "Unidades". */
+   Solo en la toma de Inventario SURA. Usa el lector nativo del navegador
+   (BarcodeDetector, Chrome en Android) y, si no existe (iPhone), carga la librería
+   ZXing la primera vez que se abre el escáner. Al leer un código (CodBarraProducto
+   del catálogo) abre la línea del producto, lo resalta y deja el cursor en la cantidad. */
 const URL_LECTOR_ZXING = "https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js";
 let escanerActivo = false;
 let escanerStream = null;
@@ -1057,8 +1062,7 @@ function buscarProductoPorCodigo(codigo, lista = MAESTRO_PRODUCTOS) {
   const c = claveBarras(codigo);
   if (!c) return null;
   for (const p of lista) {
-    if (p.barrasUnidad && claveBarras(p.barrasUnidad) === c) return { p, unidad: "UNIDADES" };
-    if (p.barrasBulto && claveBarras(p.barrasBulto) === c) return { p, unidad: "BULTOS" };
+    if (p.barrasUnidad && claveBarras(p.barrasUnidad) === c) return { p };
   }
   return null;
 }
@@ -1083,7 +1087,7 @@ async function abrirEscaner() {
   document.getElementById("toast").classList.add("hidden");
   document.getElementById("modal-escaner").classList.remove("hidden");
   document.getElementById("escaner-manual").value = "";
-  estadoEscaner("Apunta al código de barras del producto o del bulto.");
+  estadoEscaner("Apunta al código de barras del producto.");
   escanerActivo = true;
   escanerUltimoCodigo = { codigo: "", hora: 0 };
   try {
@@ -1119,7 +1123,7 @@ async function escanearConZxing() {
     estadoEscaner("Preparando el lector...");
     await cargarScript(URL_LECTOR_ZXING);
     if (!escanerActivo) return;
-    estadoEscaner("Apunta al código de barras del producto o del bulto.");
+    estadoEscaner("Apunta al código de barras del producto.");
   }
   const lector = new ZXingBrowser.BrowserMultiFormatReader();
   escanerControlesZxing = await lector.decodeFromConstraints(
@@ -1153,18 +1157,18 @@ async function procesarCodigoEscaneado(codigoLeido) {
   escanerUltimoCodigo = { codigo, hora: ahora };
   if (navigator.vibrate) navigator.vibrate(60);
 
+  if (modoToma !== "INVENTARIO") { cerrarEscaner(); return; } // el escáner es solo para Inventario SURA
+
   const encontrado = buscarProductoPorCodigo(codigo, usaCatalogoSura() ? MAESTRO_CATALOGO_SURA : MAESTRO_PRODUCTOS);
   if (!encontrado) {
     const enMaestra = usaCatalogoSura() && buscarProductoPorCodigo(codigo);
-    const enCatalogo = modoToma === "PRECIO" && buscarProductoPorCodigo(codigo, MAESTRO_CATALOGO_SURA);
-    if (enMaestra && enMaestra.p.tipo !== "SURA") estadoEscaner(`«${nombreLegible(enMaestra.p.producto)}» es de la competencia: búscalo en la pestaña Precios.`, "error");
-    else if (enCatalogo) estadoEscaner(`«${nombreLegible(tituloProducto(enCatalogo.p))}» está en el Catálogo SURA pero no en la maestra de precios. Para contarlo, usa la pestaña Inventario SURA.`, "error");
+    if (enMaestra && enMaestra.p.tipo !== "SURA") estadoEscaner(`«${nombreLegible(enMaestra.p.producto)}» es de la competencia: no se cuenta en Inventario SURA.`, "error");
     else estadoEscaner(`El código ${codigo} no está en ${usaCatalogoSura() ? "el Catálogo SURA" : "la maestra de productos"}.`, "error");
     return;
   }
-  const { p, unidad } = encontrado;
-  if (modoToma === "INVENTARIO" && p.tipo !== "SURA") {
-    estadoEscaner(`«${nombreLegible(p.producto)}» es de la competencia: búscalo en la pestaña Precios.`, "error");
+  const { p } = encontrado;
+  if (p.tipo !== "SURA") {
+    estadoEscaner(`«${nombreLegible(p.producto)}» es de la competencia: no se cuenta en Inventario SURA.`, "error");
     return;
   }
   if (!productosDelModo(p.categoria, p.sublinea).some(x => x.producto === p.producto)) {
@@ -1185,13 +1189,8 @@ async function procesarCodigoEscaneado(codigoLeido) {
   }
   const fila = resaltarProductoEnSublinea(p.producto);
   if (!fila) return;
-  if (modoToma === "INVENTARIO") {
-    cambiarUnidadInventario(fila.querySelector(".btn-unidad-und"), unidad);
-    fila.querySelector(".input-cantidad-inv").focus();
-  } else {
-    fila.querySelector(".input-precio-prod").focus();
-  }
-  mostrarToast(`Escaneado: ${nombreLegible(tituloProducto(p))}`, modoToma === "INVENTARIO" ? `Código de ${unidad === "BULTOS" ? `bulto${p.unidadesPorBulto ? ` (${p.unidadesPorBulto} und)` : ""}` : "unidad"}: escribe la cantidad contada.` : "Escribe el precio del anaquel.");
+  fila.querySelector(".input-cantidad-inv").focus();
+  mostrarToast(`Escaneado: ${nombreLegible(tituloProducto(p))}`, `Escribe la cantidad contada (en ${fila.getAttribute("data-unidad") === "BULTOS" ? "bultos" : "unidades"}).`);
 }
 
 /* Aviso flotante abajo (estilo CIMA), se cierra solo. */
