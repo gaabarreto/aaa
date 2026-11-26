@@ -18,7 +18,7 @@ let MAESTRO_PRODUCTOS = [];
 let MAESTRO_VENDEDORES = [];
 let MAESTRO_CLIENTES = [];
 // Catálogo SURA (query de artículos): base de la toma de Inventario SURA.
-let MAESTRO_CATALOGO_SURA = JSON.parse(localStorage.getItem('maestroCatalogoSura') || '[]');
+let MAESTRO_CATALOGO_SURA = []; // se lee de IndexedDB al iniciar (ver window.onload)
 let registrosPreciosDB = JSON.parse(localStorage.getItem('registrosPrecios') || '[]');
 let asesorInfo = JSON.parse(localStorage.getItem('asesorInfo') || 'null') || { codigo: "", nombre: "No configurado" };
 let clienteActual = { cod: "", nombre: "", canal: "", region: "", estado: "", ciudad: "", fecha: "" };
@@ -34,6 +34,69 @@ let chartTendenciaInstancia = null;
 // antes de reordenar la maestra podían quedar con "Pañales " vs "PAÑALES").
 function normTxt(v) {
   return (v || "").toString().trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+/* ==================== 1.2 ALMACENAMIENTO DEL DISPOSITIVO ====================
+   localStorage da solo ~5 MB por página. Lo grande (fotos de productos y el
+   Catálogo SURA) va a IndexedDB, que admite cientos de MB; lo pequeño sigue en
+   localStorage. guardarLocal() libera espacio si se llena, para que guardar
+   precios nunca falle por culpa de las fotos. */
+const IDB_NOMBRE = "dataprice", IDB_ALMACEN = "kv";
+let idbConexion = null;
+
+function abrirIdb() {
+  if (!idbConexion) {
+    idbConexion = new Promise((resolve, reject) => {
+      if (!("indexedDB" in window)) { reject(new Error("IndexedDB no disponible")); return; }
+      const req = indexedDB.open(IDB_NOMBRE, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(IDB_ALMACEN);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    idbConexion.catch(() => { idbConexion = null; });
+  }
+  return idbConexion;
+}
+
+async function idbOperacion(modo, operacion) {
+  const db = await abrirIdb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_ALMACEN, modo);
+    const req = operacion(tx.objectStore(IDB_ALMACEN));
+    tx.oncomplete = () => resolve(req.result);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+const idbGet = (clave) => idbOperacion("readonly", a => a.get(clave)).catch(() => undefined);
+const idbSet = (clave, valor) => idbOperacion("readwrite", a => a.put(valor, clave));
+const idbDel = (clave) => idbOperacion("readwrite", a => a.delete(clave)).catch(() => {});
+
+const esClaveDeImagen = (clave) => clave.startsWith("imgProducto_");
+
+function guardarLocal(clave, valor) {
+  try {
+    localStorage.setItem(clave, valor);
+  } catch (err) {
+    // Almacenamiento lleno: se borran las fotos guardadas a la antigua en localStorage
+    // (se pueden volver a bajar de la nube) y se reintenta. Si aún no cabe, el error sigue.
+    Object.keys(localStorage).filter(esClaveDeImagen).forEach(k => localStorage.removeItem(k));
+    localStorage.setItem(clave, valor);
+  }
+}
+
+// Versiones anteriores guardaban fotos y catálogo en localStorage: se mudan a IndexedDB.
+async function migrarAlmacenamientoGrande() {
+  for (const clave of Object.keys(localStorage)) {
+    if (!esClaveDeImagen(clave) && clave !== "maestroCatalogoSura") continue;
+    try {
+      const valor = localStorage.getItem(clave);
+      await idbSet(clave, clave === "maestroCatalogoSura" ? JSON.parse(valor) : valor);
+    } catch (err) {
+      if (!esClaveDeImagen(clave)) continue; // sin IndexedDB el catálogo se queda donde está
+    }
+    localStorage.removeItem(clave); // las fotos se liberan igual: están en la nube
+  }
 }
 
 /* ==================== 1.5 MODAL DE MENSAJES (reemplaza alert/confirm) ====================
@@ -134,7 +197,7 @@ function cargarMaestroClientes(event) {
           codVendedor: (r["CodVendedor"] || "").toString().trim(),
           nombreVendedor: (r["NombreVendedor"] || "").toString().trim(),
         })).filter(c => c.cod);
-        localStorage.setItem('maestroClientes', JSON.stringify(MAESTRO_CLIENTES));
+        guardarLocal('maestroClientes', JSON.stringify(MAESTRO_CLIENTES));
 
         // El mismo Excel de clientes trae Código/Nombre de cada vendedor
         // (columnas CodVendedor/NombreVendedor); se derivan los asesores
@@ -146,7 +209,7 @@ function cargarMaestroClientes(event) {
           }
         });
         MAESTRO_VENDEDORES = [...vendedoresPorCod.values()];
-        localStorage.setItem('maestroVendedores', JSON.stringify(MAESTRO_VENDEDORES));
+        guardarLocal('maestroVendedores', JSON.stringify(MAESTRO_VENDEDORES));
 
         const [syncClientes, syncVendedores] = await Promise.all([
           subirMaestroANube("clientes", MAESTRO_CLIENTES),
@@ -192,7 +255,7 @@ function cargarMaestroProductos(event) {
           barrasUnidad: (r["Barras Unidad"] ?? "").toString().replace(/\D/g, ""),
           unidadesPorBulto: parseInt(r["Unidades por Bulto"], 10) || 0,
         })).filter(p => p.producto);
-        localStorage.setItem('maestroProductos', JSON.stringify(MAESTRO_PRODUCTOS));
+        guardarLocal('maestroProductos', JSON.stringify(MAESTRO_PRODUCTOS));
         const sincronizado = await subirMaestroANube("productos", MAESTRO_PRODUCTOS);
         document.getElementById('status-productos').textContent = `¡Éxito! ${MAESTRO_PRODUCTOS.length} productos cargados${sincronizado ? " y sincronizados a todos los dispositivos." : " (solo en este dispositivo; revisa la configuración de Firebase)."}`;
       } else {
@@ -254,7 +317,7 @@ function cargarCatalogoSura(event) {
         return;
       }
       MAESTRO_CATALOGO_SURA = filas.map(convertirFilaCatalogo).filter(Boolean);
-      localStorage.setItem('maestroCatalogoSura', JSON.stringify(MAESTRO_CATALOGO_SURA));
+      await idbSet("maestroCatalogoSura", MAESTRO_CATALOGO_SURA);
       const sincronizado = await subirMaestroANube("catalogoSura", MAESTRO_CATALOGO_SURA);
       const conCodigo = MAESTRO_CATALOGO_SURA.filter(p => p.barrasUnidad).length;
       status.textContent = `¡Éxito! ${MAESTRO_CATALOGO_SURA.length} artículos (${conCodigo} con código de barras, ${filas.length - MAESTRO_CATALOGO_SURA.length} excluidos)${sincronizado ? " y sincronizados a todos los dispositivos." : " (solo en este dispositivo; revisa la configuración de Firebase)."}`;
@@ -298,7 +361,7 @@ async function guardarConfigAsesor() {
   const n = document.getElementById('input-asesor-nombre').value.trim();
   if (c && n) {
     asesorInfo = { codigo: c, nombre: n };
-    localStorage.setItem('asesorInfo', JSON.stringify(asesorInfo));
+    guardarLocal('asesorInfo', JSON.stringify(asesorInfo));
     actualizarInfoAsesorDOM();
     document.getElementById('modal-config-asesor').classList.add('hidden');
     document.getElementById("input-search-cliente").value = "";
@@ -331,7 +394,7 @@ function intentarLogin() {
   if (!val) return;
 
   if (val === USUARIO_ADMIN) {
-    localStorage.setItem('sesionActiva', JSON.stringify({ tipo: 'ADMIN' }));
+    guardarLocal('sesionActiva', JSON.stringify({ tipo: 'ADMIN' }));
     sesionTipo = 'ADMIN';
     input.value = "";
     irADestinoTrasLogin(0);
@@ -339,7 +402,7 @@ function intentarLogin() {
   }
 
   if (val === USUARIO_BI) {
-    localStorage.setItem('sesionActiva', JSON.stringify({ tipo: 'ANALYTICS' }));
+    guardarLocal('sesionActiva', JSON.stringify({ tipo: 'ANALYTICS' }));
     sesionTipo = 'ANALYTICS';
     input.value = "";
     irADestinoTrasLogin(5);
@@ -348,8 +411,8 @@ function intentarLogin() {
 
   if (val === RUTA_GENERAL_CODIGO) {
     asesorInfo = { codigo: RUTA_GENERAL_CODIGO, nombre: RUTA_GENERAL_NOMBRE };
-    localStorage.setItem('asesorInfo', JSON.stringify(asesorInfo));
-    localStorage.setItem('sesionActiva', JSON.stringify({ tipo: 'ASESOR' }));
+    guardarLocal('asesorInfo', JSON.stringify(asesorInfo));
+    guardarLocal('sesionActiva', JSON.stringify({ tipo: 'ASESOR' }));
     actualizarInfoAsesorDOM();
     sesionTipo = 'ASESOR';
     input.value = "";
@@ -360,8 +423,8 @@ function intentarLogin() {
   const vendedor = MAESTRO_VENDEDORES.find(v => v.cod.toUpperCase() === val);
   if (vendedor) {
     asesorInfo = { codigo: vendedor.cod, nombre: vendedor.nombre };
-    localStorage.setItem('asesorInfo', JSON.stringify(asesorInfo));
-    localStorage.setItem('sesionActiva', JSON.stringify({ tipo: 'ASESOR' }));
+    guardarLocal('asesorInfo', JSON.stringify(asesorInfo));
+    guardarLocal('sesionActiva', JSON.stringify({ tipo: 'ASESOR' }));
     actualizarInfoAsesorDOM();
     sesionTipo = 'ASESOR';
     input.value = "";
@@ -1289,7 +1352,7 @@ async function guardarPreciosToma() {
     nuevosRegistros.push(registro);
   });
 
-  localStorage.setItem('registrosPrecios', JSON.stringify(registrosPreciosDB));
+  guardarLocal('registrosPrecios', JSON.stringify(registrosPreciosDB));
   poblarFiltrosVisualizador(); // refresca Región/Estado/Ciudad de Analytics con los datos recién capturados
   renderCategoriasMenu();
   goToScreen(2);
@@ -1839,7 +1902,7 @@ async function subirRegistroANube(registro) {
   try {
     await dbNube.collection("registrosPrecios").doc(String(registro.id)).set(registro);
     registro.synced = true;
-    localStorage.setItem('registrosPrecios', JSON.stringify(registrosPreciosDB));
+    guardarLocal('registrosPrecios', JSON.stringify(registrosPreciosDB));
   } catch (err) {
     console.warn("[DataPrice] No se pudo sincronizar el registro " + registro.id + " (se reintentará cuando haya conexión):", err.message);
   }
@@ -1945,7 +2008,7 @@ async function descargarMaestroDeNubeSiCambio(nombreMaestro) {
       Array.from({ length: meta.chunks }, (_, i) => dbNube.collection("maestro_" + nombreMaestro).doc("chunk_" + i).get())
     );
     const datos = chunkDocs.flatMap(d => (d.exists ? d.data().items : []));
-    localStorage.setItem(`maestro_${nombreMaestro}_version`, String(meta.version));
+    guardarLocal(`maestro_${nombreMaestro}_version`, String(meta.version));
     return datos;
   } catch (err) {
     console.warn(`[DataPrice] No se pudo revisar actualizaciones del maestro "${nombreMaestro}":`, err.message);
@@ -1963,10 +2026,10 @@ async function sincronizarMaestrosDesdeNube() {
     descargarMaestroDeNubeSiCambio("vendedores"),
     descargarMaestroDeNubeSiCambio("catalogoSura"),
   ]);
-  if (nubeCatalogo) { MAESTRO_CATALOGO_SURA = nubeCatalogo; localStorage.setItem('maestroCatalogoSura', JSON.stringify(MAESTRO_CATALOGO_SURA)); }
-  if (nubeProductos) { MAESTRO_PRODUCTOS = nubeProductos; localStorage.setItem('maestroProductos', JSON.stringify(MAESTRO_PRODUCTOS)); }
-  if (nubeClientes) { MAESTRO_CLIENTES = nubeClientes; localStorage.setItem('maestroClientes', JSON.stringify(MAESTRO_CLIENTES)); }
-  if (nubeVendedores) { MAESTRO_VENDEDORES = nubeVendedores; localStorage.setItem('maestroVendedores', JSON.stringify(MAESTRO_VENDEDORES)); }
+  if (nubeCatalogo) { MAESTRO_CATALOGO_SURA = nubeCatalogo; await idbSet("maestroCatalogoSura", MAESTRO_CATALOGO_SURA).catch(() => {}); }
+  if (nubeProductos) { MAESTRO_PRODUCTOS = nubeProductos; guardarLocal('maestroProductos', JSON.stringify(MAESTRO_PRODUCTOS)); }
+  if (nubeClientes) { MAESTRO_CLIENTES = nubeClientes; guardarLocal('maestroClientes', JSON.stringify(MAESTRO_CLIENTES)); }
+  if (nubeVendedores) { MAESTRO_VENDEDORES = nubeVendedores; guardarLocal('maestroVendedores', JSON.stringify(MAESTRO_VENDEDORES)); }
 }
 
 /* ----- Orden de listados: un solo documento liviano (nombres, no objetos) ----- */
@@ -1981,7 +2044,7 @@ async function cargarOrdenListados() {
       ORDEN_CATEGORIAS = d.categorias || [];
       ORDEN_SUBLINEAS = d.sublineas || {};
       ORDEN_PRODUCTOS = d.productos || {};
-      localStorage.setItem('ordenListados', JSON.stringify({ categorias: ORDEN_CATEGORIAS, sublineas: ORDEN_SUBLINEAS, productos: ORDEN_PRODUCTOS }));
+      guardarLocal('ordenListados', JSON.stringify({ categorias: ORDEN_CATEGORIAS, sublineas: ORDEN_SUBLINEAS, productos: ORDEN_PRODUCTOS }));
     }
   } catch (err) {
     console.warn("[DataPrice] No se pudo cargar el orden de listados desde la nube:", err.message);
@@ -1989,7 +2052,7 @@ async function cargarOrdenListados() {
 }
 
 async function guardarOrdenEnNube() {
-  localStorage.setItem('ordenListados', JSON.stringify({ categorias: ORDEN_CATEGORIAS, sublineas: ORDEN_SUBLINEAS, productos: ORDEN_PRODUCTOS }));
+  guardarLocal('ordenListados', JSON.stringify({ categorias: ORDEN_CATEGORIAS, sublineas: ORDEN_SUBLINEAS, productos: ORDEN_PRODUCTOS }));
   if (!dbNube) return false;
   try {
     await dbNube.collection("maestroMeta").doc("orden").set({
@@ -2006,7 +2069,7 @@ async function guardarOrdenEnNube() {
    Un índice liviano (solo la lista de nombres de producto que SÍ tienen
    imagen) se descarga una vez al iniciar. La imagen en sí (base64,
    comprimida a ~300px) se descarga bajo demanda, la primera vez que ese
-   producto se muestra en la tabla de captura, y se cachea en localStorage
+   producto se muestra en la tabla de captura, y se guarda en IndexedDB
    para no volver a pedirla. */
 let IMAGENES_PRODUCTOS_INDICE = new Set();
 
@@ -2022,7 +2085,7 @@ async function cargarIndiceImagenesProductos() {
     const snap = await dbNube.collection("maestroMeta").doc("imagenesProductos").get();
     if (snap.exists) {
       IMAGENES_PRODUCTOS_INDICE = new Set(snap.data().slugs || []);
-      localStorage.setItem('imagenesProductosIndice', JSON.stringify([...IMAGENES_PRODUCTOS_INDICE]));
+      guardarLocal('imagenesProductosIndice', JSON.stringify([...IMAGENES_PRODUCTOS_INDICE]));
     }
   } catch (err) {
     console.warn("[DataPrice] No se pudo cargar el índice de imágenes de productos:", err.message);
@@ -2158,7 +2221,7 @@ async function subirImagenProducto(nombreProducto, archivo) {
   if (!dbNube) return false;
   await subirImagenProductoSinActualizarIndice(nombreProducto, archivo);
   await dbNube.collection("maestroMeta").doc("imagenesProductos").set({ slugs: [...IMAGENES_PRODUCTOS_INDICE] });
-  localStorage.setItem('imagenesProductosIndice', JSON.stringify([...IMAGENES_PRODUCTOS_INDICE]));
+  guardarLocal('imagenesProductosIndice', JSON.stringify([...IMAGENES_PRODUCTOS_INDICE]));
   return true;
 }
 
@@ -2171,7 +2234,7 @@ async function subirImagenProductoSinActualizarIndice(nombreProducto, archivo) {
   const base64 = await comprimirImagenABase64(archivo);
   await dbNube.collection("productoImagenes").doc(slug).set({ imagenBase64: base64, actualizadoEn: new Date().toISOString() });
   IMAGENES_PRODUCTOS_INDICE.add(slug);
-  localStorage.setItem(`imgProducto_${slug}`, base64); // ya que lo tenemos, lo cacheamos de una vez en este dispositivo
+  await idbSet(`imgProducto_${slug}`, base64).catch(() => {}); // ya que la tenemos, se cachea de una vez en este dispositivo
   return slug;
 }
 
@@ -2181,8 +2244,8 @@ async function quitarImagenProducto(nombreProducto) {
   await dbNube.collection("productoImagenes").doc(slug).delete();
   IMAGENES_PRODUCTOS_INDICE.delete(slug);
   await dbNube.collection("maestroMeta").doc("imagenesProductos").set({ slugs: [...IMAGENES_PRODUCTOS_INDICE] });
-  localStorage.setItem('imagenesProductosIndice', JSON.stringify([...IMAGENES_PRODUCTOS_INDICE]));
-  localStorage.removeItem(`imgProducto_${slug}`);
+  guardarLocal('imagenesProductosIndice', JSON.stringify([...IMAGENES_PRODUCTOS_INDICE]));
+  await idbDel(`imgProducto_${slug}`);
   return true;
 }
 
@@ -2197,37 +2260,34 @@ function cerrarImagenAmpliada() {
 }
 
 // Se llama por cada fila de la tabla de captura (screen-4): si el producto
-// tiene imagen, la muestra (desde caché local o, si no, la pide una sola vez
-// a Firestore y la cachea para la próxima).
+// tiene imagen, la muestra.
 async function cargarImagenProductoEnFila(slug) {
   if (!IMAGENES_PRODUCTOS_INDICE.has(slug)) return;
+  const base64 = await obtenerImagenProducto(slug);
+  if (!base64) return;
+  // La fila pudo haberse vuelto a dibujar mientras se esperaba (el usuario cambió
+  // de sublínea rápido): se buscan los elementos actuales.
   const img = document.getElementById(`img-prod-${slug}`);
   const placeholder = document.getElementById(`img-prod-${slug}-placeholder`);
-  if (!img) return;
+  if (img) { img.src = base64; img.classList.remove("hidden"); }
+  if (placeholder) placeholder.classList.add("hidden");
+}
 
-  const mostrar = (base64) => {
-    img.src = base64;
-    img.classList.remove("hidden");
-    if (placeholder) placeholder.classList.add("hidden");
-  };
-
-  const cacheado = localStorage.getItem(`imgProducto_${slug}`);
-  if (cacheado) { mostrar(cacheado); return; }
-  if (!dbNube) return;
+// Imagen de un producto: primero la copia del dispositivo (IndexedDB); si no está,
+// se pide una sola vez a Firestore y se guarda para la próxima.
+async function obtenerImagenProducto(slug) {
+  const cacheada = await idbGet(`imgProducto_${slug}`);
+  if (cacheada) return cacheada;
+  if (!dbNube || !IMAGENES_PRODUCTOS_INDICE.has(slug)) return null;
   try {
     const snap = await dbNube.collection("productoImagenes").doc(slug).get();
-    if (snap.exists) {
-      const base64 = snap.data().imagenBase64;
-      localStorage.setItem(`imgProducto_${slug}`, base64);
-      // La fila pudo haberse vuelto a dibujar mientras esperábamos la red
-      // (usuario cambió de sublínea rápido); re-consulta el elemento actual.
-      const imgActual = document.getElementById(`img-prod-${slug}`);
-      const placeholderActual = document.getElementById(`img-prod-${slug}-placeholder`);
-      if (imgActual) { imgActual.src = base64; imgActual.classList.remove("hidden"); }
-      if (placeholderActual) placeholderActual.classList.add("hidden");
-    }
+    if (!snap.exists) return null;
+    const base64 = snap.data().imagenBase64;
+    await idbSet(`imgProducto_${slug}`, base64).catch(() => {});
+    return base64;
   } catch (err) {
     console.warn(`[DataPrice] No se pudo cargar la imagen del producto (${slug}):`, err.message);
+    return null;
   }
 }
 
@@ -2240,20 +2300,23 @@ function poblarSelectorImagenProductos() {
   onCambioSelectorImagenProducto();
 }
 
-function onCambioSelectorImagenProducto() {
-  const nombre = document.getElementById("img-select-producto").value;
-  const slug = slugProducto(nombre);
-  const base64 = localStorage.getItem(`imgProducto_${slug}`);
+async function onCambioSelectorImagenProducto() {
+  const selector = document.getElementById("img-select-producto");
+  const slug = slugProducto(selector.value);
   const img = document.getElementById("img-preview-actual");
   const vacio = document.getElementById("img-preview-vacio");
   const label = document.getElementById("img-preview-label");
+  document.getElementById("status-imagen-producto").textContent = "";
+  renderProductosSinImagen();
+  img.classList.add("hidden"); vacio.classList.remove("hidden");
+  label.textContent = IMAGENES_PRODUCTOS_INDICE.has(slug) ? "Cargando..." : "Sin imagen";
+  const base64 = await obtenerImagenProducto(slug);
+  if (slugProducto(selector.value) !== slug) return; // cambiaron de producto mientras cargaba
   if (base64) {
     img.src = base64; img.classList.remove("hidden"); vacio.classList.add("hidden"); label.textContent = "Imagen actual";
   } else {
-    img.classList.add("hidden"); vacio.classList.remove("hidden"); label.textContent = "Sin imagen";
+    label.textContent = "Sin imagen";
   }
-  document.getElementById("status-imagen-producto").textContent = "";
-  renderProductosSinImagen();
 }
 
 // Desplegable con los productos que todavía no tienen imagen; elegir uno lo
@@ -2371,7 +2434,7 @@ async function onSubirImagenesMasivo(event) {
     }
     if (emparejados.length) {
       await dbNube.collection("maestroMeta").doc("imagenesProductos").set({ slugs: [...IMAGENES_PRODUCTOS_INDICE] });
-      localStorage.setItem('imagenesProductosIndice', JSON.stringify([...IMAGENES_PRODUCTOS_INDICE]));
+      guardarLocal('imagenesProductosIndice', JSON.stringify([...IMAGENES_PRODUCTOS_INDICE]));
     }
 
     onCambioSelectorImagenProducto();
@@ -2527,7 +2590,7 @@ async function cargarVistas() {
     const snap = await dbNube.collection("maestroMeta").doc("vistas").get();
     if (snap.exists) {
       aplicarVistas(snap.data());
-      localStorage.setItem('vistasToma', JSON.stringify(vistasComoObjeto()));
+      guardarLocal('vistasToma', JSON.stringify(vistasComoObjeto()));
     }
   } catch (err) {
     console.warn("[DataPrice] No se pudieron cargar las vistas desde la nube:", err.message);
@@ -2535,7 +2598,7 @@ async function cargarVistas() {
 }
 
 async function guardarVistasEnNube() {
-  localStorage.setItem('vistasToma', JSON.stringify(vistasComoObjeto()));
+  guardarLocal('vistasToma', JSON.stringify(vistasComoObjeto()));
   if (!dbNube) return false;
   try {
     await dbNube.collection("maestroMeta").doc("vistas").set({ ...vistasComoObjeto(), actualizadoEn: new Date().toISOString() });
@@ -2658,7 +2721,11 @@ async function vistasToggle(idx) {
 window.onload = async function () {
   inicializarFirebase();
   await cargarMaestrosBase();
-  await sincronizarMaestrosDesdeNube();
+  await migrarAlmacenamientoGrande();
+  MAESTRO_CATALOGO_SURA = (await idbGet("maestroCatalogoSura")) || [];
+  // Si el catálogo no está en el dispositivo (p. ej. no cupo antes), se fuerza a bajarlo otra vez.
+  if (!MAESTRO_CATALOGO_SURA.length) localStorage.removeItem("maestro_catalogoSura_version");
+  try { await sincronizarMaestrosDesdeNube(); } catch (err) { console.warn("[DataPrice] No se pudieron sincronizar los maestros:", err.message); }
   await Promise.all([cargarOrdenListados(), cargarIndiceImagenesProductos(), cargarVistas()]);
   document.getElementById("fecha-captura").value = new Date().toISOString().split('T')[0];
   actualizarInfoAsesorDOM();
