@@ -751,6 +751,8 @@ function renderCategoriasMenu() {
   document.getElementById("pc-ayuda-modo").textContent = modoToma === "INVENTARIO"
     ? "Solo productos SURA: escribe las unidades contadas (se marca «Está» sola) o toca «No está»."
     : "Registra el precio de cada producto. Sin precio, el producto queda como «No está».";
+  // Sin catálogo en este dispositivo el inventario usa la maestra (sin códigos de barras): se avisa.
+  document.getElementById("pc-aviso-catalogo").classList.toggle("hidden", !(inventario && !MAESTRO_CATALOGO_SURA.length));
   const container = document.getElementById("container-categorias");
   priceCheckRefs = [];
   let total = 0, hechas = 0;
@@ -1163,7 +1165,8 @@ async function procesarCodigoEscaneado(codigoLeido) {
   if (!encontrado) {
     const enMaestra = usaCatalogoSura() && buscarProductoPorCodigo(codigo);
     if (enMaestra && enMaestra.p.tipo !== "SURA") estadoEscaner(`«${nombreLegible(enMaestra.p.producto)}» es de la competencia: no se cuenta en Inventario SURA.`, "error");
-    else estadoEscaner(`El código ${codigo} no está en ${usaCatalogoSura() ? "el Catálogo SURA" : "la maestra de productos"}.`, "error");
+    else if (!usaCatalogoSura()) estadoEscaner("El Catálogo SURA no está cargado en este dispositivo, por eso no se reconocen los códigos. Pide al administrador que suba el query de artículos.", "error");
+    else estadoEscaner(`El código ${codigo} no está en el Catálogo SURA.`, "error");
     return;
   }
   const { p } = encontrado;
