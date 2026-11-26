@@ -17,6 +17,8 @@ let sesionTipo = null; // ADMIN/ASESOR/ANALYTICS: tipo de sesión del login (par
 let MAESTRO_PRODUCTOS = [];
 let MAESTRO_VENDEDORES = [];
 let MAESTRO_CLIENTES = [];
+// Catálogo SURA (query de artículos): base de la toma de Inventario SURA.
+let MAESTRO_CATALOGO_SURA = JSON.parse(localStorage.getItem('maestroCatalogoSura') || '[]');
 let registrosPreciosDB = JSON.parse(localStorage.getItem('registrosPrecios') || '[]');
 let asesorInfo = JSON.parse(localStorage.getItem('asesorInfo') || 'null') || { codigo: "", nombre: "No configurado" };
 let clienteActual = { cod: "", nombre: "", canal: "", region: "", estado: "", ciudad: "", fecha: "" };
@@ -204,6 +206,71 @@ function cargarMaestroProductos(event) {
     }
     event.target.value = "";
   }; reader.readAsArrayBuffer(file);
+}
+
+/* Catálogo SURA: el query de artículos (vwAcomArticulos). Se excluyen anulados,
+   POP, material de empaque y granel. Las unidades por bulto salen del "1X12" de
+   la descripción. Se agrupa por Categoría -> Línea. */
+const CATEGORIAS_FUERA_DE_CATALOGO = new Set(["MATERIAL DE EMPAQUE NAC", "POP", "PRODUCTO A GRANEL"]);
+
+// "1X12" -> 12; "1X4X12" (4 displays de 12) -> 48.
+const PATRON_BULTO = /\b1\s*x\s*(\d+)(?:\s*x\s*(\d+))?\b/gi;
+function unidadesPorBultoDeDescripcion(texto) {
+  const coincidencias = [...(texto || "").matchAll(PATRON_BULTO)];
+  if (!coincidencias.length) return 0;
+  const [, a, b] = coincidencias[coincidencias.length - 1];
+  return parseInt(a, 10) * (b ? parseInt(b, 10) : 1);
+}
+
+function convertirFilaCatalogo(r) {
+  const anulado = r["Estatus_Anulado"] === true || ["TRUE", "1", "SI"].includes(String(r["Estatus_Anulado"]).trim().toUpperCase());
+  const categoria = (r["Categoria"] || "").toString().trim();
+  const producto = (r["Descripcion"] || "").toString().trim().replace(/\s+/g, " ");
+  if (anulado || !producto || !categoria || CATEGORIAS_FUERA_DE_CATALOGO.has(normTxt(categoria))) return null;
+  const codigo = (r["Codigo"] ?? "").toString().trim();
+  return {
+    id: codigo, codigo, producto,
+    marca: (r["Marca"] || "").toString().trim(),
+    categoria,
+    sublinea: (r["Linea"] || "SIN LINEA").toString().trim(), // la Línea agrupa como una sublínea en la toma
+    subLineaArticulo: (r["SubLinea"] || "").toString().trim(),
+    size: (r["Color"] || "").toString().trim(), // en el query, "Color" trae la presentación (1L, 500ML...)
+    tipo: "SURA",
+    barrasUnidad: (r["CodBarraProducto"] ?? "").toString().replace(/\D/g, ""),
+    barrasBulto: (r["CodBarraBulto"] ?? "").toString().replace(/\D/g, ""),
+    unidadesPorBulto: unidadesPorBultoDeDescripcion(producto),
+  };
+}
+
+function cargarCatalogoSura(event) {
+  const file = event.target.files[0]; if (!file) return; const reader = new FileReader();
+  const status = document.getElementById('status-catalogo');
+  status.textContent = "Cargando...";
+  reader.onload = async function (e) {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      const filas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      if (!filas.length || !("Descripcion" in filas[0]) || !("CodBarraProducto" in filas[0])) {
+        await mostrarAlerta("El archivo no parece el query de artículos: faltan las columnas Descripcion / CodBarraProducto.", "error");
+        status.textContent = "";
+        return;
+      }
+      MAESTRO_CATALOGO_SURA = filas.map(convertirFilaCatalogo).filter(Boolean);
+      localStorage.setItem('maestroCatalogoSura', JSON.stringify(MAESTRO_CATALOGO_SURA));
+      const sincronizado = await subirMaestroANube("catalogoSura", MAESTRO_CATALOGO_SURA);
+      const conCodigo = MAESTRO_CATALOGO_SURA.filter(p => p.barrasUnidad || p.barrasBulto).length;
+      status.textContent = `¡Éxito! ${MAESTRO_CATALOGO_SURA.length} artículos (${conCodigo} con código de barras, ${filas.length - MAESTRO_CATALOGO_SURA.length} excluidos)${sincronizado ? " y sincronizados a todos los dispositivos." : " (solo en este dispositivo; revisa la configuración de Firebase)."}`;
+    } catch (err) {
+      await mostrarAlerta("Error al leer el archivo: " + err.message, "error");
+      status.textContent = "";
+    }
+    event.target.value = "";
+  }; reader.readAsArrayBuffer(file);
+}
+
+function mostrarResumenCatalogo() {
+  const el = document.getElementById('status-catalogo');
+  if (el && !el.textContent) el.textContent = MAESTRO_CATALOGO_SURA.length ? `Cargado: ${MAESTRO_CATALOGO_SURA.length} artículos.` : "Aún no se ha cargado el catálogo.";
 }
 
 /* ============================== 3. PERFIL DE ASESOR ============================== */
@@ -425,6 +492,7 @@ function goToScreen(screenId, opciones = {}) {
     poblarSelectorImagenProductos();
     poblarSelectorOrdenCategorias();
     renderVistas();
+    mostrarResumenCatalogo();
   }
 }
 
@@ -626,9 +694,27 @@ let priceCheckRefs = []; // índice -> {cat, sub}; evita meter nombres en los on
 let modoToma = "PRECIO";
 const esRegistroInventario = (r) => r.toma === "INVENTARIO";
 
+// Inventario SURA usa el Catálogo SURA (query de artículos) cuando está cargado;
+// si todavía no se subió, usa los productos SURA de la maestra.
+const usaCatalogoSura = () => modoToma === "INVENTARIO" && MAESTRO_CATALOGO_SURA.length > 0;
+
 function productosDelModo(cat, sub) {
+  if (usaCatalogoSura()) {
+    return MAESTRO_CATALOGO_SURA.filter(p => p.categoria === cat && p.sublinea === sub)
+      .sort((a, b) => a.marca.localeCompare(b.marca, "es") || a.producto.localeCompare(b.producto, "es"));
+  }
   const lista = productosParaToma(cat, sub);
   return modoToma === "INVENTARIO" ? lista.filter(p => p.tipo === "SURA") : lista;
+}
+
+// [{ cat, subs: [...] }] de la toma activa, en el orden en que se muestran.
+function gruposDelModo() {
+  if (!usaCatalogoSura()) return categoriasParaToma().map(cat => ({ cat, subs: sublineasParaToma(cat) }));
+  // Mismo orden de categorías que la maestra (comparando sin tildes); las demás, al final.
+  const ordenMaestra = obtenerCategoriasOrdenadas().map(normTxt);
+  const posicion = (c) => { const i = ordenMaestra.indexOf(normTxt(c)); return i === -1 ? 999 : i; };
+  const cats = [...new Set(MAESTRO_CATALOGO_SURA.map(p => p.categoria))].sort((a, b) => posicion(a) - posicion(b) || a.localeCompare(b, "es"));
+  return cats.map(cat => ({ cat, subs: [...new Set(MAESTRO_CATALOGO_SURA.filter(p => p.categoria === cat).map(p => p.sublinea))].sort((a, b) => a.localeCompare(b, "es")) }));
 }
 
 function cambiarModoToma(modo) {
@@ -664,8 +750,8 @@ function renderCategoriasMenu() {
   priceCheckRefs = [];
   let total = 0, hechas = 0;
   let html = "";
-  categoriasParaToma().forEach(cat => {
-    const filas = sublineasParaToma(cat).map(sub => ({ sub, productos: productosDelModo(cat, sub).length }))
+  gruposDelModo().forEach(({ cat, subs }) => {
+    const filas = subs.map(sub => ({ sub, productos: productosDelModo(cat, sub).length }))
       .filter(f => f.productos > 0) // en Inventario SURA se ocultan las sublíneas sin productos SURA
       .map(f => {
         const estado = estadoSublineaParaCliente(cat, f.sub);
@@ -703,7 +789,7 @@ const MAX_RESULTADOS_BUSQUEDA = 40;
 function renderBusquedaPriceCheck(busqueda) {
   const q = normTxt(busqueda);
   const resultados = [];
-  categoriasParaToma().forEach(cat => sublineasParaToma(cat).forEach(sub => {
+  gruposDelModo().forEach(({ cat, subs }) => subs.forEach(sub => {
     productosDelModo(cat, sub).forEach(p => {
       const coincide = normTxt(p.producto).includes(q) || normTxt(p.marca).includes(q) || normTxt(p.size).includes(q) || (p.id && String(p.id) === busqueda)
         || (claveBarras(busqueda).length >= 6 && [p.barrasUnidad, p.barrasBulto].some(b => b && claveBarras(b) === claveBarras(busqueda)));
@@ -722,7 +808,7 @@ function renderBusquedaPriceCheck(busqueda) {
       const estado = estadoSublineaParaCliente(cat, sub);
       return `<button type="button" onclick="abrirSublineaPriceCheck(${i})" class="w-full text-left flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 transition">
         <span class="min-w-0">
-          <span class="block text-sm font-medium text-gray-900">${escHtml(nombreLegible(p.producto))}</span>
+          <span class="block text-sm font-medium text-gray-900">${escHtml(nombreLegible(tituloProducto(p)))}</span>
           <span class="block text-xs text-gray-500 mt-0.5"><i class="fa-regular fa-folder text-[10px] mr-1"></i>${escHtml(nombreLegible(sub))} · ${(n => `${n} producto${n === 1 ? "" : "s"}`)(productosDelModo(cat, sub).length)}</span>
         </span>
         <span class="flex items-center gap-1.5 flex-shrink-0 text-xs font-medium ${estado.clase}">${estado.clave === "HOY" ? '<i class="fa-solid fa-circle-check"></i>' : ""}${estado.texto}</span>
@@ -754,18 +840,22 @@ function resaltarProductoEnSublinea(nombre) {
   return fila;
 }
 
+// En el catálogo la descripción trae el "1X12" del bulto: se quita del título y se
+// muestra aparte como "Bulto x12".
+const tituloProducto = (p) => (p.codigo ? p.producto.replace(PATRON_BULTO, "").replace(/\s+/g, " ").trim() : p.producto);
+
 function htmlImagenYNombre(prod, slug) {
   const isSura = prod.tipo === "SURA";
   return `
         <img id="img-prod-${slug}" src="" alt="" onclick="mostrarImagenAmpliada(this.src)" class="w-14 h-14 rounded-2xl object-contain bg-white p-1 shadow-sm hidden flex-shrink-0 cursor-zoom-in">
         <div id="img-prod-${slug}-placeholder" class="w-14 h-14 rounded-2xl bg-white shadow-sm flex items-center justify-center text-gray-300 flex-shrink-0"><i class="fa-solid fa-image"></i></div>
         <div class="min-w-0 flex-1">
-          <p class="font-medium text-gray-900 text-sm leading-snug">${escHtml(nombreLegible(prod.producto))}</p>
-          <p class="text-xs text-gray-500 mt-1 flex items-center gap-1 flex-wrap">${isSura ? '<span class="text-[10px] font-bold text-blue-600 bg-blue-50 rounded px-1.5 py-0.5 mr-0.5">SURA</span>' : ""}<span>${escHtml(nombreLegible(prod.marca))}</span><span>·</span><span>${escHtml(nombreLegible(prod.size) || "-")}</span></p>
+          <p class="font-medium text-gray-900 text-sm leading-snug">${escHtml(nombreLegible(tituloProducto(prod)))}</p>
+          <p class="text-xs text-gray-500 mt-1 flex items-center gap-1 flex-wrap">${isSura ? '<span class="text-[10px] font-bold text-blue-600 bg-blue-50 rounded px-1.5 py-0.5 mr-0.5">SURA</span>' : ""}<span>${escHtml(nombreLegible(prod.marca))}</span><span>·</span><span>${escHtml(nombreLegible(prod.size) || "-")}</span>${prod.unidadesPorBulto ? `<span>·</span><span>Bulto x${prod.unidadesPorBulto}</span>` : ""}</p>
         </div>`;
 }
 
-const datosProducto = (prod) => `data-producto="${escHtml(prod.producto)}" data-marca="${escHtml(prod.marca)}" data-tipo="${escHtml(prod.tipo)}" data-size="${escHtml(prod.size || '')}"`;
+const datosProducto = (prod) => `data-producto="${escHtml(prod.producto)}" data-marca="${escHtml(prod.marca)}" data-tipo="${escHtml(prod.tipo)}" data-size="${escHtml(prod.size || '')}" data-codigo="${escHtml(prod.codigo || '')}" data-upb="${prod.unidadesPorBulto || 0}"`;
 
 function seleccionarSublinea(sub) {
   sublineaSeleccionada = sub;
@@ -963,10 +1053,10 @@ let escanerUltimoCodigo = { codigo: "", hora: 0 };
 
 const claveBarras = (v) => (v ?? "").toString().replace(/\D/g, "").replace(/^0+/, ""); // UPC-A (12) = EAN-13 con 0 adelante
 
-function buscarProductoPorCodigo(codigo) {
+function buscarProductoPorCodigo(codigo, lista = MAESTRO_PRODUCTOS) {
   const c = claveBarras(codigo);
   if (!c) return null;
-  for (const p of MAESTRO_PRODUCTOS) {
+  for (const p of lista) {
     if (p.barrasUnidad && claveBarras(p.barrasUnidad) === c) return { p, unidad: "UNIDADES" };
     if (p.barrasBulto && claveBarras(p.barrasBulto) === c) return { p, unidad: "BULTOS" };
   }
@@ -1063,8 +1153,15 @@ async function procesarCodigoEscaneado(codigoLeido) {
   escanerUltimoCodigo = { codigo, hora: ahora };
   if (navigator.vibrate) navigator.vibrate(60);
 
-  const encontrado = buscarProductoPorCodigo(codigo);
-  if (!encontrado) { estadoEscaner(`El código ${codigo} no está en la maestra de productos.`, "error"); return; }
+  const encontrado = buscarProductoPorCodigo(codigo, usaCatalogoSura() ? MAESTRO_CATALOGO_SURA : MAESTRO_PRODUCTOS);
+  if (!encontrado) {
+    const enMaestra = usaCatalogoSura() && buscarProductoPorCodigo(codigo);
+    const enCatalogo = modoToma === "PRECIO" && buscarProductoPorCodigo(codigo, MAESTRO_CATALOGO_SURA);
+    if (enMaestra && enMaestra.p.tipo !== "SURA") estadoEscaner(`«${nombreLegible(enMaestra.p.producto)}» es de la competencia: búscalo en la pestaña Precios.`, "error");
+    else if (enCatalogo) estadoEscaner(`«${nombreLegible(tituloProducto(enCatalogo.p))}» está en el Catálogo SURA pero no en la maestra de precios. Para contarlo, usa la pestaña Inventario SURA.`, "error");
+    else estadoEscaner(`El código ${codigo} no está en ${usaCatalogoSura() ? "el Catálogo SURA" : "la maestra de productos"}.`, "error");
+    return;
+  }
   const { p, unidad } = encontrado;
   if (modoToma === "INVENTARIO" && p.tipo !== "SURA") {
     estadoEscaner(`«${nombreLegible(p.producto)}» es de la competencia: búscalo en la pestaña Precios.`, "error");
@@ -1094,7 +1191,7 @@ async function procesarCodigoEscaneado(codigoLeido) {
   } else {
     fila.querySelector(".input-precio-prod").focus();
   }
-  mostrarToast(`Escaneado: ${nombreLegible(p.producto)}`, modoToma === "INVENTARIO" ? `Código de ${unidad === "BULTOS" ? `bulto${p.unidadesPorBulto ? ` (${p.unidadesPorBulto} und)` : ""}` : "unidad"}: escribe la cantidad contada.` : "Escribe el precio del anaquel.");
+  mostrarToast(`Escaneado: ${nombreLegible(tituloProducto(p))}`, modoToma === "INVENTARIO" ? `Código de ${unidad === "BULTOS" ? `bulto${p.unidadesPorBulto ? ` (${p.unidadesPorBulto} und)` : ""}` : "unidad"}: escribe la cantidad contada.` : "Escribe el precio del anaquel.");
 }
 
 /* Aviso flotante abajo (estilo CIMA), se cierra solo. */
@@ -1113,7 +1210,7 @@ function pendientesDeToma(modo) {
   const modoActual = modoToma;
   modoToma = modo;
   let total = 0, hechas = 0;
-  categoriasParaToma().forEach(cat => sublineasParaToma(cat).forEach(sub => {
+  gruposDelModo().forEach(({ cat, subs }) => subs.forEach(sub => {
     if (!productosDelModo(cat, sub).length) return;
     total++;
     if (estadoSublineaParaCliente(cat, sub).clave === "HOY") hechas++;
@@ -1179,7 +1276,11 @@ async function guardarPreciosToma() {
       precio: inventario ? 0 : f.val, // 0 = sin precio
       presencia: inventario ? (f.cantidad > 0 ? "SI" : "NO") : (f.val > 0 ? "SI" : "NO"),
       cantidad: inventario ? f.cantidad : 0, // cantidad contada en anaquel (solo inventario SURA)
-      ...(inventario ? { unidadMedida: f.unidad } : {}), // "UNIDADES" o "BULTOS"
+      ...(inventario ? {
+        unidadMedida: f.unidad, // "UNIDADES" o "BULTOS"
+        codigoArticulo: f.inp.getAttribute("data-codigo") || "",
+        unidadesPorBulto: parseInt(f.inp.getAttribute("data-upb"), 10) || 0,
+      } : {}),
       synced: false, // se marca true cuando llega a la nube (ver sincronizarPendientes)
     };
     registrosPreciosDB.push(registro);
@@ -1670,7 +1771,8 @@ function renderTablaCoberturaAsesor(data) {
 function totalEnUnidades(r) {
   if (!(r.cantidad > 0)) return "";
   if (r.unidadMedida !== "BULTOS") return r.cantidad;
-  const p = MAESTRO_PRODUCTOS.find(x => x.producto === r.producto);
+  if (r.unidadesPorBulto > 0) return r.cantidad * r.unidadesPorBulto;
+  const p = MAESTRO_CATALOGO_SURA.find(x => x.producto === r.producto) || MAESTRO_PRODUCTOS.find(x => x.producto === r.producto);
   return p && p.unidadesPorBulto > 0 ? r.cantidad * p.unidadesPorBulto : "";
 }
 
@@ -1693,6 +1795,7 @@ async function exportarExcel() {
     "Presencia en Anaquel": presenciaDeRegistro(r) === "SI" ? "Está" : "No está",
   }));
   const inventario = dataFiltrada.filter(esRegistroInventario).map(r => ({
+    "Código SURA": r.codigoArticulo || "",
     ...columnasBase(r),
     "Presencia en Anaquel": presenciaDeRegistro(r) === "SI" ? "Está" : "No está",
     "Cantidad en Anaquel": r.cantidad > 0 ? r.cantidad : "",
@@ -1852,11 +1955,13 @@ async function descargarMaestroDeNubeSiCambio(nombreMaestro) {
 // otro dispositivo, actualiza los maestros locales antes de mostrar nada.
 async function sincronizarMaestrosDesdeNube() {
   if (!dbNube) return;
-  const [nubeProductos, nubeClientes, nubeVendedores] = await Promise.all([
+  const [nubeProductos, nubeClientes, nubeVendedores, nubeCatalogo] = await Promise.all([
     descargarMaestroDeNubeSiCambio("productos"),
     descargarMaestroDeNubeSiCambio("clientes"),
     descargarMaestroDeNubeSiCambio("vendedores"),
+    descargarMaestroDeNubeSiCambio("catalogoSura"),
   ]);
+  if (nubeCatalogo) { MAESTRO_CATALOGO_SURA = nubeCatalogo; localStorage.setItem('maestroCatalogoSura', JSON.stringify(MAESTRO_CATALOGO_SURA)); }
   if (nubeProductos) { MAESTRO_PRODUCTOS = nubeProductos; localStorage.setItem('maestroProductos', JSON.stringify(MAESTRO_PRODUCTOS)); }
   if (nubeClientes) { MAESTRO_CLIENTES = nubeClientes; localStorage.setItem('maestroClientes', JSON.stringify(MAESTRO_CLIENTES)); }
   if (nubeVendedores) { MAESTRO_VENDEDORES = nubeVendedores; localStorage.setItem('maestroVendedores', JSON.stringify(MAESTRO_VENDEDORES)); }

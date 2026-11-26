@@ -162,6 +162,23 @@
           </button>
           <p id="status-productos" class="text-xs font-bold text-emerald-600 text-center"></p>
         </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4 md:col-span-2">
+          <div class="flex items-start gap-4">
+            <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center text-xl flex-shrink-0">
+              <i class="fa-solid fa-barcode"></i>
+            </div>
+            <div>
+              <h3 class="text-lg font-bold text-gray-900">Catálogo SURA (Inventario)</h3>
+              <p class="text-xs text-gray-500 mt-1">Sube el query de artículos (columnas: Codigo, Descripcion, Marca, CodBarraBulto, CodBarraProducto, Categoria, Linea, SubLinea, Color, Estatus_Anulado). Es la lista de productos de la toma de Inventario SURA, agrupada por Línea, con sus códigos de barras para el escáner. No incluye anulados, POP, material de empaque ni granel.</p>
+            </div>
+          </div>
+          <input type="file" id="upload-catalogo" accept=".xlsx, .xls" class="hidden" onchange="cargarCatalogoSura(event)">
+          <button onclick="document.getElementById('upload-catalogo').click()" class="w-full bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 font-bold py-2.5 rounded-lg text-sm transition">
+            Subir Query de Artículos
+          </button>
+          <p id="status-catalogo" class="text-xs font-bold text-emerald-600 text-center"></p>
+        </div>
       </div>
 
       <!-- Imágenes de referencia de productos -->
