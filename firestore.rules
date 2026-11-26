@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Colección "registrosPrecios": precios e inventario capturados por los asesores.
+    // - Lectura abierta: Administrador y BI necesitan leer todo sin autenticarse
+    //   (este proyecto usa un login simple sin backend, no Firebase Auth real).
+    // - Creación permitida solo si el documento trae los campos mínimos y un
+    //   precio numérico válido (freno básico contra basura):
+    //     · Toma de Precios: precio > 0, o precio 0 cuando el producto "No está".
+    //     · Toma de Inventario SURA (toma = "INVENTARIO"): precio 0, con
+    //       presencia "SI"/"NO" y una cantidad numérica de 0 o más.
+    // - Nada de editar/borrar desde el cliente: es un histórico de solo-anexado.
+    match /registrosPrecios/{docId} {
+      function datos() { return request.resource.data; }
+      function esInventario() { return datos().get('toma', 'PRECIO') == 'INVENTARIO'; }
+      function precioValido() {
+        return datos().precio > 0
+          || (datos().precio == 0 && datos().get('presencia', '') == 'NO');
+      }
+      function inventarioValido() {
+        return datos().precio == 0
+          && datos().get('presencia', '') in ['SI', 'NO']
+          && datos().get('cantidad', 0) is number
+          && datos().get('cantidad', 0) >= 0;
+      }
+
+      allow read: if true;
+      allow create: if datos().keys().hasAll(['fecha', 'codCliente', 'producto', 'tipo', 'precio'])
+                    && datos().precio is number
+                    && (esInventario() ? inventarioValido() : precioValido());
+      allow update, delete: if false;
+    }
+
+    // Maestros administrados desde el panel de Administrador (Clientes,
+    // Vendedores, Productos y Catálogo SURA), partidos en "chunks" para no pasar
+    // el límite de 1MB por documento. Sin Firebase Auth real, así que
+    // lectura/escritura abiertas: el control de acceso al panel de Administrador
+    // lo hace el login propio de la app, no estas reglas.
+    match /maestro_clientes/{chunkId} { allow read, write: if true; }
+    match /maestro_vendedores/{chunkId} { allow read, write: if true; }
+    match /maestro_productos/{chunkId} { allow read, write: if true; }
+    match /maestro_catalogoSura/{chunkId} { allow read, write: if true; }
+
+    // Metadatos livianos: versión/cantidad de chunks de cada maestro, el
+    // índice de productos con imagen, el orden de listados y las vistas.
+    match /maestroMeta/{docId} { allow read, write: if true; }
+
+    // Imágenes de referencia de productos (JPEG comprimido en base64).
+    match /productoImagenes/{slug} { allow read, write: if true; }
+
+    // Todo lo demás, cerrado por defecto.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
